@@ -84,5 +84,6 @@
     <PublishTrimmed>false</PublishTrimmed>
     <PublishSingleFile>false</PublishSingleFile>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 </Project>

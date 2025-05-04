@@ -5,7 +5,6 @@
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
-using System.Threading;
 using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension;

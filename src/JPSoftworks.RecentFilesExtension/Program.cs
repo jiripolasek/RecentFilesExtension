@@ -4,8 +4,6 @@
 //
 // ------------------------------------------------------------
 
-using System.Threading;
-using System.Threading.Tasks;
 using Shmuelie.WinRTServer;
 using Shmuelie.WinRTServer.CsWinRT;
 
