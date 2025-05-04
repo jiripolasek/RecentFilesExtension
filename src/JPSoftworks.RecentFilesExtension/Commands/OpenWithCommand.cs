@@ -25,6 +25,6 @@ internal sealed partial class OpenWithCommand : InvokableCommand
     {
         ShellLauncher.OpenWith(this._item.FullPath);
 
-        return CommandResult.GoHome();
+        return CommandResult.Dismiss();
     }
 }

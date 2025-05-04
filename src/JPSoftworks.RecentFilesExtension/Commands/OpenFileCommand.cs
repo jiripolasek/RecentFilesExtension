@@ -40,6 +40,6 @@ internal sealed partial class OpenFileCommand : InvokableCommand
             }
         }
 
-        return CommandResult.GoHome();
+        return CommandResult.Dismiss();
     }
 }
