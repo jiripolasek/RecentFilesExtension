@@ -8,6 +8,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using Serilog;
+using Serilog.Events;
 
 namespace JPSoftworks.RecentFilesExtension.Helpers;
 
@@ -15,20 +16,38 @@ public static class Logger
 {
     public static void Initialize()
     {
-        var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "JPSoftworks", "RecentFilesExtension", "log.txt");
-        var logDirectory = Path.GetDirectoryName(logFile);
-        if (logDirectory != null && !Directory.Exists(logDirectory))
+        try
         {
-            Directory.CreateDirectory(logDirectory);
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var logFile = Path.Combine(localAppData, "JPSoftworks", "RecentFilesExtension", "log.txt");
+            var logDirectory = Path.GetDirectoryName(logFile);
+            if (logDirectory != null && !Directory.Exists(logDirectory))
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
+
+#if DEBUG
+            const LogEventLevel minLevel = LogEventLevel.Debug;
+#else
+            const LogEventLevel minLevel = LogEventLevel.Information;
+#endif
+
+
+            Log.Logger = new LoggerConfiguration()
+                .WriteTo.File(
+                    path: logFile,
+                    buffered: false,
+                    rollingInterval: RollingInterval.Day,
+                    formatProvider: CultureInfo.InvariantCulture,
+                    restrictedToMinimumLevel: minLevel)
+                .CreateLogger();
+            Logger.LogDebug("Logger initialized");
         }
-
-        Log.Logger = new LoggerConfiguration()
-            .WriteTo.File(logFile, buffered: false, rollingInterval: RollingInterval.Day)
-            .CreateLogger();
-        Log.Logger.Information("Logger initialized.");
+        catch (Exception ex)
+        {
+            LogError(ex);
+        }
     }
-
 
     public static void LogDebug(string message)
     {
