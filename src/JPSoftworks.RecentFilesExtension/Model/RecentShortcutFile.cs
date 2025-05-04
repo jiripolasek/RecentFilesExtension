@@ -8,11 +8,22 @@ using System.IO;
 
 namespace JPSoftworks.RecentFilesExtension.Model;
 
-public class RecentFile(string shellLinkTargetPath)
+internal class RecentShortcutFile : IRecentFile
 {
-    public string FullPath { get; set; } = shellLinkTargetPath;
+    public string FullPath { get; init; }
 
-    internal bool IsDirectory()
+    public string DisplayName { get; init; }
+
+    public string TargetPath { get; init; }
+
+    public RecentShortcutFile(string shortcutFilePath, string displayName, string targetPath)
+    {
+        this.FullPath = shortcutFilePath;
+        this.DisplayName = displayName;
+        this.TargetPath = targetPath;
+    }
+
+    public bool IsDirectory()
     {
         if (!Path.Exists(this.FullPath))
         {

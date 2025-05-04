@@ -12,9 +12,9 @@ namespace JPSoftworks.RecentFilesExtension.Commands;
 
 internal sealed partial class OpenWithCommand : InvokableCommand
 {
-    private readonly RecentFile _item;
+    private readonly IRecentFile _item;
 
-    internal OpenWithCommand(RecentFile item)
+    internal OpenWithCommand(IRecentFile item)
     {
         this._item = item;
         this.Name = Strings.Command_OpenWith!;

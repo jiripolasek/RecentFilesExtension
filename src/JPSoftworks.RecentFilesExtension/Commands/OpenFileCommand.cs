@@ -14,9 +14,9 @@ namespace JPSoftworks.RecentFilesExtension.Commands;
 
 internal sealed partial class OpenFileCommand : InvokableCommand
 {
-    private readonly RecentFile _item;
+    private readonly IRecentFile _item;
 
-    internal OpenFileCommand(RecentFile item)
+    internal OpenFileCommand(IRecentFile item)
     {
         this._item = item;
         this.Name = item.IsDirectory() ? Strings.Command_OpenFolder! : Strings.Command_OpenFile!;

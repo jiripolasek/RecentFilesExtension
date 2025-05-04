@@ -12,9 +12,9 @@ namespace JPSoftworks.RecentFilesExtension.Commands;
 
 internal sealed partial class CopyPathCommand : InvokableCommand
 {
-    private readonly RecentFile _item;
+    private readonly IRecentFile _item;
 
-    internal CopyPathCommand(RecentFile item)
+    internal CopyPathCommand(IRecentFile item)
     {
         this._item = item;
         this.Name = Strings.Command_CopyPath!;
