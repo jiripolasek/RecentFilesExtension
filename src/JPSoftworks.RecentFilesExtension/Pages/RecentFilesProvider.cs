@@ -4,10 +4,6 @@
 // 
 // ------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
 

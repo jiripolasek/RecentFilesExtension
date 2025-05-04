@@ -4,8 +4,6 @@
 // 
 // ------------------------------------------------------------
 
-using System.IO;
-
 namespace JPSoftworks.RecentFilesExtension.Model;
 
 internal sealed class RecentShortcutFile : IRecentFile

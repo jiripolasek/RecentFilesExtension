@@ -4,8 +4,6 @@
 //
 // ------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Resources;
 

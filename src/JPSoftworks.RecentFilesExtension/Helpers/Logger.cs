@@ -4,9 +4,7 @@
 // 
 // ------------------------------------------------------------
 
-using System;
 using System.Globalization;
-using System.IO;
 using Serilog;
 using Serilog.Events;
 

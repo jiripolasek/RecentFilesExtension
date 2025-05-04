@@ -4,7 +4,6 @@
 // 
 // ------------------------------------------------------------
 
-using System;
 using Windows.Storage.Streams;
 using JPSoftworks.RecentFilesExtension.Commands;
 using JPSoftworks.RecentFilesExtension.Helpers;
