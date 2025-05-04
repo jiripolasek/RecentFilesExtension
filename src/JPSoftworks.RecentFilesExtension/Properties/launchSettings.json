@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "JPSoftworks.RecentFilesExtension (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "JPSoftworks.RecentFilesExtension (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

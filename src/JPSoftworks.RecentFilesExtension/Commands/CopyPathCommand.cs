@@ -1,0 +1,36 @@
+﻿// ------------------------------------------------------------
+// 
+// Copyright (c) Jiří Polášek. All rights reserved.
+// 
+// ------------------------------------------------------------
+
+using JPSoftworks.RecentFilesExtension.Helpers;
+using JPSoftworks.RecentFilesExtension.Model;
+using JPSoftworks.RecentFilesExtension.Resources;
+
+namespace JPSoftworks.RecentFilesExtension.Commands;
+
+internal sealed partial class CopyPathCommand : InvokableCommand
+{
+    private readonly RecentFile _item;
+
+    internal CopyPathCommand(RecentFile item)
+    {
+        this._item = item;
+        this.Name = Strings.Command_CopyPath!;
+        this.Icon = Icons.CopyPath;
+    }
+
+    public override CommandResult Invoke()
+    {
+        try
+        {
+            ClipboardHelper.SetText(this._item.FullPath);
+        }
+        catch
+        {
+        }
+
+        return CommandResult.KeepOpen();
+    }
+}
