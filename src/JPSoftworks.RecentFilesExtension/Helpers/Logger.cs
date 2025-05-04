@@ -12,7 +12,7 @@ using Serilog.Events;
 
 namespace JPSoftworks.RecentFilesExtension.Helpers;
 
-public static class Logger
+internal static class Logger
 {
     public static void Initialize()
     {

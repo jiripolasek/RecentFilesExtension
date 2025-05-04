@@ -8,7 +8,7 @@ using System.IO;
 
 namespace JPSoftworks.RecentFilesExtension.Model;
 
-internal class RecentShortcutFile : IRecentFile
+internal sealed class RecentShortcutFile : IRecentFile
 {
     public string FullPath { get; init; }
 
@@ -16,7 +16,7 @@ internal class RecentShortcutFile : IRecentFile
 
     public string TargetPath { get; init; }
 
-    public RecentShortcutFile(string shortcutFilePath, string displayName, string targetPath)
+    internal RecentShortcutFile(string shortcutFilePath, string displayName, string targetPath)
     {
         this.FullPath = shortcutFilePath;
         this.DisplayName = displayName;

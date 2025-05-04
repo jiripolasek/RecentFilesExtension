@@ -9,7 +9,7 @@ using JPSoftworks.RecentFilesExtension.Resources;
 
 namespace JPSoftworks.RecentFilesExtension;
 
-public partial class RecentFilesExtensionCommandsProvider : CommandProvider
+public sealed partial class RecentFilesExtensionCommandsProvider : CommandProvider
 {
     private readonly ICommandItem[] _commands;
 

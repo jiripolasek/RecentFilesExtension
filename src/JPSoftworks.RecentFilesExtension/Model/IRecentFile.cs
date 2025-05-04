@@ -6,7 +6,7 @@
 
 namespace JPSoftworks.RecentFilesExtension.Model;
 
-public interface IRecentFile
+internal interface IRecentFile
 {
     public string DisplayName { get; }
 
