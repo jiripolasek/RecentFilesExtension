@@ -29,6 +29,9 @@ public static class Program
             // This will make the main thread wait until the event is signalled by the extension class.
             // Since we have single instance of the extension object, we exit as soon as it is disposed.
             extensionDisposedEvent.WaitOne();
+
+            // Bye, bye
+            server.Stop();
         }
         else
         {
