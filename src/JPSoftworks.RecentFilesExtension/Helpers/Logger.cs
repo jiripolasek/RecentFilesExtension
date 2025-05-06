@@ -16,7 +16,7 @@ internal static class Logger
     {
         try
         {
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
             var logFile = Path.Combine(localAppData, "JPSoftworks", "RecentFilesExtension", "log.txt");
             var logDirectory = Path.GetDirectoryName(logFile);
             if (logDirectory != null && !Directory.Exists(logDirectory))
