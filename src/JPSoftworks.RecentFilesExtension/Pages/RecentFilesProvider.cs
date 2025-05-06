@@ -45,6 +45,22 @@ internal static class RecentFilesProvider
                     continue;
 
                 addedTargetPaths.Add(isNetworkPath ? shellLink.TargetPath : shellLink.TargetPath.ToLowerInvariant());
+
+                // a recent file can be accompanied by a recent parent folder; let's prefer the file over the folder and not add the folder
+                // the folder can (and usually is) preceding the file in the recent files list, so we can just remove it from the list 
+
+                // check the last item in the list, and if it is a parent folder of the current item, remove it from the list
+                if (items.Count > 0 && items[^1].TargetPath.Equals(Path.GetDirectoryName(shellLink.TargetPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    items.RemoveAt(items.Count - 1);
+                }
+
+                // add the current item to the list (if it is not a parent folder of the last item in the list)
+                if (items.Count > 0 && items[^1].TargetPath.Equals(shellLink.TargetPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 items.Add(new RecentShortcutFile(
                     recentFileInfo.FullName,
                     shellLink.DisplayName,
@@ -57,7 +73,7 @@ internal static class RecentFilesProvider
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Failed to add link {recentFileInfo.FullName}", ex);
+                Logger.LogError($"Failed to add shortcut {recentFileInfo.FullName}", ex);
             }
         }
 
