@@ -4,11 +4,12 @@
 // 
 // ------------------------------------------------------------
 
-using Windows.Storage.Streams;
 using JPSoftworks.RecentFilesExtension.Commands;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Resources;
+using Windows.Storage.Streams;
+using Windows.System;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
@@ -21,13 +22,18 @@ internal sealed partial class RecentFileListItem : ListItem
         this.Title = recentFile.DisplayName;
         this.Subtitle = recentFile.TargetPath;
         this.Icon = GetIcon(recentFile);
-        this.MoreCommands =
-        [
-            new CommandContextItem(
-                new ShowFileInFolderCommand(recentFile.FullPath) { Name = Strings.Command_ShowInFolder! }),
-            new CommandContextItem(new OpenWithCommand(recentFile)),
-            new CommandContextItem(new CopyPathCommand(recentFile))
-        ];
+        
+        List<IContextItem> moreCommands = [];
+        if (!string.IsNullOrWhiteSpace(recentFile.TargetPath))
+        {
+            moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! })
+            {
+                RequestedShortcut = new KeyChord(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.R, 0)
+            });
+            moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
+            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new KeyChord(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.C, 0) });
+        }
+        this.MoreCommands = [.. moreCommands];
     }
 
     private static IconInfo? GetIcon(IRecentFile recentShortcutFile)

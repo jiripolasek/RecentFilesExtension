@@ -25,7 +25,7 @@ internal sealed partial class CopyPathCommand : InvokableCommand
     {
         try
         {
-            ClipboardHelper.SetText(this._item.FullPath);
+            ClipboardHelper.SetText(this._item.TargetPath);
         }
         catch
         {

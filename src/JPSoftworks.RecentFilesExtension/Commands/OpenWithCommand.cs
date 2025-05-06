@@ -23,7 +23,7 @@ internal sealed partial class OpenWithCommand : InvokableCommand
 
     public override CommandResult Invoke()
     {
-        ShellLauncher.OpenWith(this._item.FullPath);
+        ShellLauncher.OpenWith(this._item.TargetPath);
 
         return CommandResult.Dismiss();
     }
