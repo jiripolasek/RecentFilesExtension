@@ -11,6 +11,8 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 
 internal static class RecentFilesProvider
 {
+    private const int MaxRecentFileCount = 100;
+
     internal static IList<RecentShortcutFile> GetRecentFiles()
     {
         var recentFiles = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
@@ -21,12 +23,12 @@ internal static class RecentFilesProvider
 
         var recentFilesShortcuts = new DirectoryInfo(recentFiles)
             .GetFiles("*.lnk", SearchOption.TopDirectoryOnly)
-            .OrderByDescending(static t => t.LastWriteTimeUtc)
-            .Take(32);
+            .OrderByDescending(static t => t.LastWriteTimeUtc);
 
         var items = new List<RecentShortcutFile>();
         var addedTargetPaths = new HashSet<string>();
 
+        var counter = 0;
         foreach (var recentFileInfo in recentFilesShortcuts)
         {
             try
@@ -47,6 +49,11 @@ internal static class RecentFilesProvider
                     recentFileInfo.FullName,
                     shellLink.DisplayName,
                     shellLink.TargetPath));
+
+                if (++counter > MaxRecentFileCount)
+                {
+                    break;
+                }
             }
             catch (Exception ex)
             {
