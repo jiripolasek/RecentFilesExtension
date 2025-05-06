@@ -38,6 +38,7 @@ internal static class Logger
                     rollingInterval: RollingInterval.Day,
                     formatProvider: CultureInfo.InvariantCulture,
                     restrictedToMinimumLevel: minLevel)
+                .MinimumLevel.Is(minLevel)
                 .CreateLogger();
             Logger.LogDebug("Logger initialized");
         }
