@@ -17,7 +17,7 @@ public sealed partial class RecentFilesExtensionCommandsProvider : CommandProvid
     {
         this.Id = "JPSoftworks.CmdPal.RecentFiles";
         this.DisplayName = Strings.Page_RecentFiles!;
-        this.Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
+        this.Icon = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
         this._commands =
         [
             new CommandItem(new RecentFilesExtensionPage()) { Subtitle = Strings.Page_RecentFiles_Subtitle! }

@@ -13,7 +13,7 @@ internal sealed partial class RecentFilesExtensionPage : ListPage
 {
     public RecentFilesExtensionPage()
     {
-        this.Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.svg");
+        this.Icon = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
         this.Title = Strings.Page_RecentFiles!;
         this.Name = Strings.Page_RecentFiles!;
         this.Id = "com.jpsoftworks.cmdpal.recentfiles";
