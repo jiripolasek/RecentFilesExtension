@@ -9,74 +9,161 @@ using JPSoftworks.RecentFilesExtension.Model;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
-internal static class RecentFilesProvider
+internal partial class RecentFilesProvider : IDisposable
 {
-    private const int MaxRecentFileCount = 100;
+    private const int MaxRecentFileCount = 500;
 
-    internal static IList<RecentShortcutFile> GetRecentFiles()
+    private readonly FileSystemWatcher? _fileSystemWatcher;
+    private readonly string _recentFilesFolderPath;
+
+    // cache + sync
+    private readonly Lock _syncRoot = new();
+    private List<IRecentFile> _cachedRecentFiles = [];
+
+    private readonly System.Timers.Timer _reloadTimer = new(500) { AutoReset = false };
+
+    /// <summary>
+    /// Fired whenever the *list* of recent files actually changes.
+    /// </summary>
+    public event EventHandler<IList<IRecentFile>>? RecentFilesChanged;
+
+    internal RecentFilesProvider()
     {
-        var recentFiles = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
-        if (string.IsNullOrWhiteSpace(recentFiles))
+        this._recentFilesFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+
+        if (!string.IsNullOrWhiteSpace(this._recentFilesFolderPath))
         {
-            return [];
+            this._fileSystemWatcher = new FileSystemWatcher(this._recentFilesFolderPath, "*.lnk")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true
+            };
+            this._fileSystemWatcher.Created += this.OnFsEvent;
+            this._fileSystemWatcher.Deleted += this.OnFsEvent;
+            this._fileSystemWatcher.Renamed += this.OnFsEvent;
+            this._fileSystemWatcher.Changed += this.OnFsEvent;
+
+            this._reloadTimer.Elapsed += (_, _) => this.RefreshCache();
         }
 
-        var recentFilesShortcuts = new DirectoryInfo(recentFiles)
+        this.RefreshCache();
+    }
+
+    /// <summary>
+    /// Returns the *cached* list of recent files.  
+    /// Callers should subscribe to <see cref="RecentFilesChanged"/> for updates.
+    /// </summary>
+    internal IList<IRecentFile> GetRecentFiles()
+    {
+        lock (this._syncRoot)
+        {
+            return [.. this._cachedRecentFiles];
+        }
+    }
+
+    private void OnFsEvent(object sender, FileSystemEventArgs e)
+    {
+        Logger.LogDebug($"File system event: {e.ChangeType} {e.Name} | {e.FullPath}");
+
+        this._reloadTimer.Stop();
+        this._reloadTimer.Start();
+    }
+
+    private void RefreshCache()
+    {
+        List<IRecentFile> newList;
+        try
+        {
+            newList = this.LoadRecentFilesFromDisk();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("Failed to reload recent files", ex);
+            return;
+        }
+
+        bool changed;
+        lock (this._syncRoot)
+        {
+            changed = newList.Count != this._cachedRecentFiles.Count
+                      || !newList.Select(static i => i.TargetPath)
+                                 .SequenceEqual(this._cachedRecentFiles.Select(static i => i.TargetPath), StringComparer.OrdinalIgnoreCase);
+
+            if (changed)
+            {
+                this._cachedRecentFiles = newList;
+            }
+        }
+
+        if (changed)
+        {
+            this.RecentFilesChanged?.Invoke(null, [.. newList]);
+        }
+    }
+
+    private List<IRecentFile> LoadRecentFilesFromDisk()
+    {
+        var recentFilesShortcuts = new DirectoryInfo(this._recentFilesFolderPath)
             .GetFiles("*.lnk", SearchOption.TopDirectoryOnly)
             .OrderByDescending(static t => t.LastWriteTimeUtc);
 
-        var items = new List<RecentShortcutFile>();
-        var addedTargetPaths = new HashSet<string>();
-
+        var items = new List<IRecentFile>();
+        var addedTargetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var counter = 0;
-        foreach (var recentFileInfo in recentFilesShortcuts)
+
+        foreach (var fileInfo in recentFilesShortcuts)
         {
+            if (counter >= MaxRecentFileCount)
+                break;
+
             try
             {
                 var shellLink = new ShellLinkHelper();
-                shellLink.RetrieveTargetPath(new string(recentFileInfo.FullName));
+                shellLink.RetrieveTargetPath(fileInfo.FullName);
 
-                if (string.IsNullOrWhiteSpace(shellLink.TargetPath))
-                    continue;
-                var isNetworkPath = shellLink.TargetPath.StartsWith(@"\\", StringComparison.InvariantCultureIgnoreCase) || shellLink.TargetPath.StartsWith(@"\\?\UNC", StringComparison.InvariantCultureIgnoreCase);
-                if (!isNetworkPath && !File.Exists(shellLink.TargetPath) && !Directory.Exists(shellLink.TargetPath))
-                    continue;
-                if (addedTargetPaths.Contains(shellLink.TargetPath))
+                var target = shellLink.TargetPath;
+                if (string.IsNullOrWhiteSpace(target))
                     continue;
 
-                addedTargetPaths.Add(isNetworkPath ? shellLink.TargetPath : shellLink.TargetPath.ToLowerInvariant());
+                var isNetwork = target.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase) || target.StartsWith(@"\\?\UNC", StringComparison.OrdinalIgnoreCase);
+                if (!isNetwork && !File.Exists(target) && !Directory.Exists(target))
+                    continue;
 
-                // a recent file can be accompanied by a recent parent folder; let's prefer the file over the folder and not add the folder
-                // the folder can (and usually is) preceding the file in the recent files list, so we can just remove it from the list 
+                // avoid duplicates
+                var key = isNetwork ? target : target.ToLowerInvariant();
+                if (!addedTargetPaths.Add(key))
+                    continue;
 
-                // check the last item in the list, and if it is a parent folder of the current item, remove it from the list
-                if (items.Count > 0 && items[^1].TargetPath.Equals(Path.GetDirectoryName(shellLink.TargetPath), StringComparison.OrdinalIgnoreCase))
+                // drop parent-folder entries if immediately followed by a file in that folder
+                if (items.Count > 0
+                    && items[^1].TargetPath.Equals(Path.GetDirectoryName(target), StringComparison.OrdinalIgnoreCase))
                 {
                     items.RemoveAt(items.Count - 1);
                 }
 
-                // add the current item to the list (if it is not a parent folder of the last item in the list)
-                if (items.Count > 0 && items[^1].TargetPath.Equals(shellLink.TargetPath, StringComparison.OrdinalIgnoreCase))
+                // skip if it's the same as last
+                if (items.Count > 0
+                    && items[^1].TargetPath.Equals(target, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                items.Add(new RecentShortcutFile(
-                    recentFileInfo.FullName,
-                    shellLink.DisplayName,
-                    shellLink.TargetPath));
-
-                if (++counter > MaxRecentFileCount)
-                {
-                    break;
-                }
+                items.Add(new RecentShortcutFile(fileInfo.FullName, shellLink.DisplayName, target));
+                counter++;
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Failed to add shortcut {recentFileInfo.FullName}", ex);
+                Logger.LogError($"Failed to process shortcut {fileInfo.FullName}", ex);
             }
         }
 
         return items;
+    }
+
+    public void Dispose()
+    {
+        this._fileSystemWatcher?.Dispose();
+        this._reloadTimer.Dispose();
     }
 }
