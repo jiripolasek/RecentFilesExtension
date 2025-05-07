@@ -86,9 +86,10 @@ internal sealed partial class RecentFilesLoader : IDisposable
                    recentFile.TargetPath.Contains(q, StringComparison.OrdinalIgnoreCase);
         }
 
-        static bool FilterGlob(IRecentFile arg, Glob glob)
+        static bool FilterGlob(IRecentFile recentFile, Glob glob)
         {
-            return glob.IsMatch(arg.DisplayName) || glob.IsMatch(arg.TargetPath);
+            return glob.IsMatch(recentFile.DisplayName) ||
+                   glob.IsMatch(recentFile.TargetPath);
         }
     }
 
