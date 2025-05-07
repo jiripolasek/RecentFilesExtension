@@ -4,6 +4,7 @@
 // 
 // ------------------------------------------------------------
 
+using DotNet.Globbing;
 using JPSoftworks.RecentFilesExtension.Model;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
@@ -58,16 +59,36 @@ internal sealed partial class RecentFilesLoader : IDisposable
     {
         this._currentQuery = query;
         this._cursor = 0;
-        this._filteredFiles = string.IsNullOrWhiteSpace(query)
-            ? this._allFiles
-            : [.. this._allFiles.Where(Filter)];
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            this._filteredFiles = this._allFiles;
+        }
+        else
+        {
+            var useGlob = query.Contains('?') || query.Contains('*');
+            if (useGlob)
+            {
+                var glob = Glob.Parse(this._currentQuery, new GlobOptions { Evaluation = { CaseInsensitive = true } });
+                this._filteredFiles = [.. this._allFiles.Where(file => FilterGlob(file, glob!))];
+            }
+            else
+            {
+                this._filteredFiles = [.. this._allFiles.Where(file => FilterPlain(file, query))];
+            }
+        }
 
         return;
 
-        bool Filter(IRecentFile recentFile)
+        static bool FilterPlain(IRecentFile recentFile, string q)
         {
-            return recentFile.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                   recentFile.TargetPath.Contains(query, StringComparison.OrdinalIgnoreCase);
+            return recentFile.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                   recentFile.TargetPath.Contains(q, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool FilterGlob(IRecentFile arg, Glob glob)
+        {
+            return glob.IsMatch(arg.DisplayName) || glob.IsMatch(arg.TargetPath);
         }
     }
 
