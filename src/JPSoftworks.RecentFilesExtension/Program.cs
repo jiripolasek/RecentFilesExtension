@@ -4,6 +4,7 @@
 //
 // ------------------------------------------------------------
 
+using JPSoftworks.RecentFilesExtension.Helpers;
 using Shmuelie.WinRTServer;
 using Shmuelie.WinRTServer.CsWinRT;
 
@@ -26,7 +27,7 @@ public static class Program
             server.RegisterClass<RecentFilesExtension, IExtension>(() => extensionInstance);
             server.Start();
 
-            // This will make the main thread wait until the event is signalled by the extension class.
+            // This will make the main thread wait until the event is signaled by the extension class.
             // Since we have single instance of the extension object, we exit as soon as it is disposed.
             extensionDisposedEvent.WaitOne();
 
@@ -35,7 +36,10 @@ public static class Program
         }
         else
         {
-            Console.WriteLine("Not being launched as a Extension... exiting.");
+            // ReSharper disable once LocalizableElement
+            Console.WriteLine("Not being launched as a Extension... exiting");
+
+            await StartupHelper.HandleDirectLaunch();
         }
     }
 }
