@@ -6,6 +6,10 @@
     },
     "JPSoftworks.RecentFilesExtension (Unpackaged)": {
       "commandName": "Project"
+    },
+    "JPSoftworks.RecentFilesExtension (Package) - Launch +no params": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": false
     }
   }
 }

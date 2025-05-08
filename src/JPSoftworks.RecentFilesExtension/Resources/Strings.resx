@@ -138,4 +138,25 @@
   <data name="Page_RecentFiles_Subtitle" xml:space="preserve">
     <value>Lists recently used or accessed files or folders</value>
   </data>
+  <data name="UserExperienceHelper_CmdPalIsInstalledButFailedToStart" xml:space="preserve">
+	  <value>PowerToys Command Palette is installed, but failed to start.
+
+Please check if the app is running.</value>
+  </data>
+  <data name="UserExperienceHelper_CmdPalIsNotInstalled" xml:space="preserve">
+	  <value>PowerToys Command Palette is not installed.
+
+Install Microsoft PowerToys to use the extension.</value>
+  </data>
+  <data name="UserExperienceHelper_InfoCaption" xml:space="preserve">
+	  <value>Information</value>
+  </data>
+  <data name="UserExperienceHelper_GeneralErrorOnStart" xml:space="preserve">
+	  <value>An error occurred while launching the extension.
+
+Please check the log file for more details.</value>
+  </data>
+  <data name="UserExperienceHelper_ErrorCaption" xml:space="preserve">
+	  <value>Error</value>
+  </data>
 </root>

@@ -122,5 +122,56 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Page_RecentFiles_Subtitle", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to PowerToys Command Palette is installed, but failed to start.
+        ///
+        ///Please check if the app is running..
+        /// </summary>
+        internal static string UserExperienceHelper_CmdPalIsInstalledButFailedToStart {
+            get {
+                return ResourceManager.GetString("UserExperienceHelper_CmdPalIsInstalledButFailedToStart", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to PowerToys Command Palette is not installed.
+        ///
+        ///Install Microsoft PowerToys to use the extension..
+        /// </summary>
+        internal static string UserExperienceHelper_CmdPalIsNotInstalled {
+            get {
+                return ResourceManager.GetString("UserExperienceHelper_CmdPalIsNotInstalled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Error.
+        /// </summary>
+        internal static string UserExperienceHelper_ErrorCaption {
+            get {
+                return ResourceManager.GetString("UserExperienceHelper_ErrorCaption", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to An error occurred while launching the extension.
+        ///
+        ///Please check the log file for more details..
+        /// </summary>
+        internal static string UserExperienceHelper_GeneralErrorOnStart {
+            get {
+                return ResourceManager.GetString("UserExperienceHelper_GeneralErrorOnStart", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Information.
+        /// </summary>
+        internal static string UserExperienceHelper_InfoCaption {
+            get {
+                return ResourceManager.GetString("UserExperienceHelper_InfoCaption", resourceCulture);
+            }
+        }
     }
 }
