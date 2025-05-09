@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <UsingTask TaskName="XmlPeek" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll" />
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <RootNamespace>JPSoftworks.RecentFilesExtension</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AppxManifest>$(ProjectDir)Package.appxmanifest</AppxManifest>
 
     <WindowsSdkPackageVersion>10.0.22621.57</WindowsSdkPackageVersion>
     <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
@@ -13,6 +16,13 @@
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
+    <DebugType>embedded</DebugType>
+
+    <Company>Jiri Polasek</Company>
+    <Copyright>(c) Jiri Polasek</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <Product>Recent Files for Command Palette</Product>
+    <AssemblyTitle>Recent Files for Command Palette</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>
@@ -52,6 +62,7 @@
     <PackageReference Include="System.Text.Json" />
     <PackageReference Include="Shmuelie.WinRTServer" />
   </ItemGroup>
+
   <ItemGroup>
     <Compile Update="Resources\Strings.Designer.cs">
       <DesignTime>True</DesignTime>
@@ -87,4 +98,17 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <Target Name="UpdateVersionFromManifest" BeforeTargets="BeforeBuild">
+    <XmlPeek XmlInputPath="$(AppxManifest)" Query="/appx:Package/appx:Identity/@Version" Namespaces="&lt;Namespace Prefix='appx' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10'/&gt;">
+      <Output TaskParameter="Result" PropertyName="appxManifestVersion" />
+    </XmlPeek>
+
+    <Message Importance="High" Text="Set project version to match Appx manifest: $(appxManifestVersion)" />
+
+    <PropertyGroup>
+      <Version>$(appxManifestVersion)</Version>
+    </PropertyGroup>
+  </Target>
+
 </Project>
