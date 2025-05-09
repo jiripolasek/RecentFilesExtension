@@ -17,6 +17,12 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <DebugType>embedded</DebugType>
+
+    <Company>Jiri Polasek</Company>
+    <Copyright>(c) Jiri Polasek</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <Product>Recent Files for Command Palette</Product>
+    <AssemblyTitle>Recent Files for Command Palette</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>
