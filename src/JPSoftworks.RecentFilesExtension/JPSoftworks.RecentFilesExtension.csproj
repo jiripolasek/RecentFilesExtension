@@ -16,6 +16,7 @@
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
