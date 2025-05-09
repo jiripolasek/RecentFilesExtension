@@ -17,7 +17,7 @@ public static class Program
     {
         if (args.Length > 0 && args[0] == "-RegisterProcessAsComServer")
         {
-            await using ComServer server = new();
+            ComServer server = new();
             ManualResetEvent extensionDisposedEvent = new(false);
 
             // We are instantiating an extension instance once above, and returning it every time the callback in RegisterExtension below is called.
@@ -32,7 +32,7 @@ public static class Program
             extensionDisposedEvent.WaitOne();
 
             // Bye, bye
-            server.Stop();
+            server.UnsafeDispose();
         }
         else
         {
