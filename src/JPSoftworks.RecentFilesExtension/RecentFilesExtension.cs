@@ -5,7 +5,6 @@
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
-using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension;
 
@@ -19,8 +18,6 @@ public sealed partial class RecentFilesExtension : IExtension, IDisposable
     public RecentFilesExtension(ManualResetEvent extensionDisposedEvent)
     {
         this._extensionDisposedEvent = extensionDisposedEvent;
-
-        Logger.Initialize();
     }
 
     public object? GetProvider(ProviderType providerType)
