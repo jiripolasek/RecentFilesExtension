@@ -48,6 +48,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="DotNet.Glob" />
+    <PackageReference Include="JPSoftworks.CommandPalette.Extensions.Toolkit" />
     <PackageReference Include="Microsoft.CommandPalette.Extensions" />
     <PackageReference Include="Microsoft.Windows.CsWin32">
       <PrivateAssets>all</PrivateAssets>

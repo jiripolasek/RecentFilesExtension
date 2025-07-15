@@ -4,7 +4,7 @@
 //
 // ------------------------------------------------------------
 
-using JPSoftworks.RecentFilesExtension.Helpers;
+using JPSoftworks.CommandPalette.Extensions.Toolkit.Helpers;
 using Shmuelie.WinRTServer;
 using Shmuelie.WinRTServer.CsWinRT;
 
@@ -15,6 +15,8 @@ public static class Program
     [MTAThread]
     public static async Task Main(string[] args)
     {
+        Logger.Initialize("JPSoftworks", "RecentFilesExtension");
+
         if (args.Length > 0 && args[0] == "-RegisterProcessAsComServer")
         {
             ComServer server = new();
@@ -36,10 +38,7 @@ public static class Program
         }
         else
         {
-            // ReSharper disable once LocalizableElement
-            Console.WriteLine("Not being launched as a Extension... exiting");
-
-            await StartupHelper.HandleDirectLaunch();
+            await StartupHelper.HandleDirectLaunchAsync();
         }
     }
 }
