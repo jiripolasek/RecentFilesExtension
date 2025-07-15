@@ -20,7 +20,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     public RecentFilesExtensionPage()
     {
-        this.Icon = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
+        this.Icon = Icons.MainIcon;
         this.Title = Strings.Page_RecentFiles!;
         this.Name = Strings.Page_RecentFiles!;
         this.Id = "com.jpsoftworks.cmdpal.recentfiles";

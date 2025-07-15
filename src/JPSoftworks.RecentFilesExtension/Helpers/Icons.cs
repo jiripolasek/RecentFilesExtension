@@ -19,4 +19,6 @@ internal static class Icons
     internal static IconInfo CopyPath { get; } = new("\uE8C8"); // CopyPath
 
     internal static IconInfo OpenWith { get; } = new("\uE7AC"); // OpenWith
+
+    internal static IconInfo MainIcon { get; } = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
 }
