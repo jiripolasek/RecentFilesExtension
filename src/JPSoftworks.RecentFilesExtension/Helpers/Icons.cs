@@ -21,4 +21,6 @@ internal static class Icons
     internal static IconInfo OpenWith { get; } = new("\uE7AC"); // OpenWith
 
     internal static IconInfo MainIcon { get; } = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
+
+    internal static IconInfo BigIcon { get; } = IconHelpers.FromRelativePath("Assets\\Square44x44Logo.scale-200.png");
 }

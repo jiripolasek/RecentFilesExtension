@@ -14,9 +14,12 @@ internal sealed class RecentShortcutFile : IRecentFile
 
     public string TargetPath { get; init; }
 
-    internal RecentShortcutFile(string shortcutFilePath, string displayName, string targetPath)
+    public FileInfo FileInfo { get; init; }
+
+    internal RecentShortcutFile(FileInfo fileInfo, string displayName, string targetPath)
     {
-        this.FullPath = shortcutFilePath;
+        this.FileInfo = fileInfo;
+        this.FullPath = fileInfo.FullName;
         this.DisplayName = displayName;
         this.TargetPath = targetPath;
     }

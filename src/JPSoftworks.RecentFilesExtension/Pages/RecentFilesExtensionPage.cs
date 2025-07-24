@@ -11,8 +11,11 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 
 internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDisposable
 {
-    private readonly RecentFilesProvider _recentFilesProvider;
-    private readonly RecentFilesLoader _loader;
+    private static readonly CommandItem NothingFoundEmptyContent;
+    private static readonly CommandItem NothingFoundWithQueryEmptyContent;
+
+    private readonly IRecentFilesProvider _recentFilesProvider;
+    private readonly IRecentFilesLoader _loader;
     private Guid _searchToken = Guid.Empty;
 
     private List<IListItem> _loadedItems = [];
@@ -28,13 +31,46 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         this._recentFilesProvider = new RecentFilesProvider();
         this._loader = new RecentFilesLoader(this._recentFilesProvider);
         this._loader.SourceChanged += this.OnSourceChanged;
+        this._loader.InitializationComplete += this.OnSourceInitialized;
 
+        this.EmptyContent = new CommandItem
+        {
+            Title = "Loading...",
+            Subtitle = "Loading your recent files",
+            Icon = Icons.MainIcon,
+        };
+
+        this.IsLoading = true;
         this.TriggerSearch("");
+    }
+
+
+
+    static RecentFilesExtensionPage()
+    {
+        NothingFoundEmptyContent = new()
+        {
+            Title = "No recent files found",
+            Subtitle = "It's so empty here",
+            Icon = Icons.BigIcon,
+        };
+        NothingFoundWithQueryEmptyContent = new()
+        {
+            Title = "No recent files matching the search text",
+            Subtitle = "Try changing your search query",
+            Icon = Icons.BigIcon,
+        };
     }
 
     private void OnSourceChanged(object? sender, EventArgs e)
     {
         this._sourceChanged = true;
+    }
+
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        this._sourceChanged = true;
+        this.TriggerSearch(this.SearchText);
     }
 
     public override void UpdateSearchText(string oldSearch, string newSearch)
@@ -47,6 +83,12 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     private void TriggerSearch(string newSearch)
     {
+        if (!this._loader.IsInitialized)
+        {
+            this.IsLoading = true;
+            return;
+        }
+
         try
         {
             this._searchToken = Guid.NewGuid();
@@ -70,13 +112,15 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             var items = this._loader.LoadNextPage(this._searchToken, CancellationToken.None);
             this._loadedItems.AddRange(items);
             this.HasMoreItems = this._loader.HasMore;
-            this.IsLoading = false;
+            this.IsLoading = !this._loader.IsInitialized;
+
             this.RaiseItemsChanged(this._loadedItems.Count);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex);
-            throw;
+            this.IsLoading = !this._loader.IsInitialized;
+            this.RaiseItemsChanged(this._loadedItems.Count);
         }
     }
 
@@ -86,13 +130,27 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         {
             this.TriggerSearch(this.SearchText);
         }
+
+        var newEmptyContent = string.IsNullOrWhiteSpace(this.SearchText)
+            ? NothingFoundEmptyContent
+            : NothingFoundWithQueryEmptyContent;
+
+        if (this._loadedItems.Count == 0)
+        {
+            if (this.EmptyContent != newEmptyContent)
+            {
+                this.EmptyContent = newEmptyContent;
+            }
+        }
+
         return this._loadedItems.ToArray();
     }
 
     public void Dispose()
     {
         this._loader.SourceChanged -= this.OnSourceChanged;
+        this._loader.InitializationComplete -= this.OnSourceInitialized;
         this._loader.Dispose();
-        this._recentFilesProvider.Dispose();
+        (this._recentFilesProvider as IDisposable)?.Dispose();
     }
 }

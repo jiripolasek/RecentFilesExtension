@@ -22,23 +22,23 @@ internal sealed partial class RecentFileListItem : ListItem
         this.Title = recentFile.DisplayName;
         this.Subtitle = recentFile.TargetPath;
         this.Icon = GetIcon(recentFile);
-        
+
         List<IContextItem> moreCommands = [];
         if (!string.IsNullOrWhiteSpace(recentFile.TargetPath))
         {
             moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! })
             {
-                RequestedShortcut = new KeyChord(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.R, 0)
+                RequestedShortcut = new(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.R, 0)
             });
             moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
-            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new KeyChord(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.C, 0) });
+            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.C, 0) });
         }
         this.MoreCommands = [.. moreCommands];
     }
 
     private static IconInfo? GetIcon(IRecentFile recentShortcutFile)
     {
-        if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath))
+        if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath) && !recentShortcutFile.TargetPath.IsNetworkPath())
         {
             try
             {
@@ -46,7 +46,7 @@ internal sealed partial class RecentFileListItem : ListItem
                 if (stream != null)
                 {
                     var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
-                    return new IconInfo(data, data);
+                    return new(data, data);
                 }
             }
             catch (Exception ex)
@@ -55,18 +55,21 @@ internal sealed partial class RecentFileListItem : ListItem
             }
         }
 
-        try
+        if (!recentShortcutFile.FullPath.IsNetworkPath())
         {
-            var stream = ThumbnailHelper.GetThumbnail(recentShortcutFile.FullPath).Result;
-            if (stream != null)
+            try
             {
-                var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
-                return new IconInfo(data, data);
+                var stream = ThumbnailHelper.GetThumbnail(recentShortcutFile.FullPath).Result;
+                if (stream != null)
+                {
+                    var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
+                    return new(data, data);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError("Failed to get the icon.", ex);
+            catch (Exception ex)
+            {
+                Logger.LogError("Failed to get the icon.", ex);
+            }
         }
 
         return null;
