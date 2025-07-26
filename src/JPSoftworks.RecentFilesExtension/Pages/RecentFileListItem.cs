@@ -4,6 +4,7 @@
 // 
 // ------------------------------------------------------------
 
+using System.Runtime.InteropServices;
 using JPSoftworks.RecentFilesExtension.Commands;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
@@ -38,40 +39,66 @@ internal sealed partial class RecentFileListItem : ListItem
 
     private static IconInfo? GetIcon(IRecentFile recentShortcutFile)
     {
+        // Try target path first if it exists and is not a network path
         if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath) && !recentShortcutFile.TargetPath.IsNetworkPath())
         {
-            try
-            {
-                var stream = ThumbnailHelper.GetThumbnail(recentShortcutFile.TargetPath).Result;
-                if (stream != null)
-                {
-                    var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
-                    return new(data, data);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Failed to get the icon.", ex);
-            }
+            var icon = TryGetThumbnailIcon(recentShortcutFile.TargetPath);
+            if (icon != null)
+                return icon;
         }
 
+        // Fall back to full path if it's not a network path
         if (!recentShortcutFile.FullPath.IsNetworkPath())
         {
-            try
-            {
-                var stream = ThumbnailHelper.GetThumbnail(recentShortcutFile.FullPath).Result;
-                if (stream != null)
-                {
-                    var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
-                    return new(data, data);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Failed to get the icon.", ex);
-            }
+            return TryGetThumbnailIcon(recentShortcutFile.FullPath);
         }
 
         return null;
+    }
+
+    private static IconInfo? TryGetThumbnailIcon(string path)
+    {
+        try
+        {
+            var stream = ThumbnailHelper.GetThumbnail(path).Result;
+            if (stream != null)
+            {
+                var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
+                return new(data, data);
+            }
+        }
+        catch (Exception ex)
+        {
+            HandleThumbnailException(ex, path);
+        }
+
+        return null;
+    }
+
+    private static void HandleThumbnailException(Exception ex, string path)
+    {
+        switch (ex)
+        {
+            case AggregateException aggregateEx:
+
+                foreach (var innerEx in aggregateEx.InnerExceptions)
+                {
+                    if (innerEx is COMException comEx)
+                    {
+                        Logger.LogWarning($"Failed to get the icon for {path}. Error code = {comEx.ErrorCode}");
+                    }
+                    else
+                    {
+                        Logger.LogError("Failed to get the icon.", innerEx);
+                    }
+                }
+                break;
+            case COMException comEx:
+                Logger.LogWarning($"Failed to get the icon for {path}. Error code = {comEx.ErrorCode}");
+                break;
+            default:
+                Logger.LogError("Failed to get the icon.", ex);
+                break;
+        }
     }
 }
