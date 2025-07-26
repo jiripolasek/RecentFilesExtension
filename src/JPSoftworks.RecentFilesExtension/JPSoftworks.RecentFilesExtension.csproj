@@ -55,10 +55,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Windows.CsWinRT" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Web.WebView2" />
-    <PackageReference Include="Serilog" />
-    <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="System.Drawing.Common" />
     <PackageReference Include="System.Text.Json" />
     <PackageReference Include="Shmuelie.WinRTServer" />
@@ -88,9 +85,8 @@
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' != 'DEBUG' ">
-	  <IsAotCompatible>true</IsAotCompatible>
-	  <PublishTrimmed>true</PublishTrimmed>
-	  <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -101,6 +97,12 @@
 
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ImplicitUsings>enable</ImplicitUsings>
+    
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
   <Target Name="UpdateVersionFromManifest" BeforeTargets="BeforeBuild">
