@@ -11,12 +11,13 @@ using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Resources;
 using Windows.Storage.Streams;
 using Windows.System;
+using JPCommands = JPSoftworks.RecentFilesExtension.Commands;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
 internal sealed partial class RecentFileListItem : ListItem
 {
-    internal RecentFileListItem(IRecentFile recentFile) : base(new OpenFileCommand(recentFile))
+    internal RecentFileListItem(IRecentFile recentFile) : base(new JPCommands.OpenFileCommand(recentFile))
     {
         ArgumentNullException.ThrowIfNull(recentFile);
 
@@ -32,7 +33,7 @@ internal sealed partial class RecentFileListItem : ListItem
                 RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.E, 0)
             });
             moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
-            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.C, 0) });
+            moreCommands.Add(new CommandContextItem(new JPCommands.CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.C, 0) });
         }
         this.MoreCommands = [.. moreCommands];
     }
