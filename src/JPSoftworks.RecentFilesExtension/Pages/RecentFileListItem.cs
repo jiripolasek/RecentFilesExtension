@@ -29,10 +29,10 @@ internal sealed partial class RecentFileListItem : ListItem
         {
             moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! })
             {
-                RequestedShortcut = new(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.R, 0)
+                RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.E, 0)
             });
             moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
-            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, (int)VirtualKey.C, 0) });
+            moreCommands.Add(new CommandContextItem(new CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.C, 0) });
         }
         this.MoreCommands = [.. moreCommands];
     }
