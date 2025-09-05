@@ -1,7 +1,7 @@
 ﻿// ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
@@ -10,7 +10,6 @@ using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Resources;
 using Windows.Storage.Streams;
-using Windows.System;
 using JPCommands = JPSoftworks.RecentFilesExtension.Commands;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
@@ -28,12 +27,9 @@ internal sealed partial class RecentFileListItem : ListItem
         List<IContextItem> moreCommands = [];
         if (!string.IsNullOrWhiteSpace(recentFile.TargetPath))
         {
-            moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! })
-            {
-                RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.E, 0)
-            });
+            moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! }) { RequestedShortcut = KeyChords.OpenInExplorer });
             moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
-            moreCommands.Add(new CommandContextItem(new JPCommands.CopyPathCommand(recentFile)) { RequestedShortcut = new(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (int)VirtualKey.C, 0) });
+            moreCommands.Add(new CommandContextItem(new JPCommands.CopyPathCommand(recentFile)) { RequestedShortcut = KeyChords.CopyPath });
         }
         this.MoreCommands = [.. moreCommands];
     }
