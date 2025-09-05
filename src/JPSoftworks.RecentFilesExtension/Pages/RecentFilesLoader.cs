@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using DotNet.Globbing;
@@ -18,7 +18,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     private List<IRecentFile> _allFiles = [];
     private List<IRecentFile> _filteredFiles = [];
     private int _cursor;
-    private string _currentQuery = string.Empty;
+    private SearchQuery _currentQuery = new(string.Empty, [], string.Empty);
     private Guid _currentSearchToken;
     private bool _isInitialized;
 
@@ -61,7 +61,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     private void InitializeFromProvider()
     {
         var files = this._recentFilesProvider.GetRecentFiles().ToList();
-        
+
         lock (this._syncRoot)
         {
             this._allFiles = files;
@@ -86,47 +86,61 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
             wasInitialized = this._isInitialized;
             this._isInitialized = true;
         }
-        
+
         if (!wasInitialized)
         {
             this.InitializationComplete?.Invoke(this, EventArgs.Empty);
         }
-        
+
         this.SourceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
     /// Resets the filter to a new search string (empty = no filter) and rewinds paging.
     /// </summary>
-    public void Restart(string? searchQuery, Guid searchToken)
+    public void Restart(SearchQuery searchQuery, Guid searchToken)
     {
         lock (this._syncRoot)
         {
             this._currentSearchToken = searchToken;
-            this.ApplyFilterInternal(searchQuery ?? string.Empty);
+            this.ApplyFilterInternal(searchQuery);
         }
     }
-    
-    private void ApplyFilterInternal(string query)
+
+    private void ApplyFilterInternal(SearchQuery searchQuery)
     {
-        this._currentQuery = query;
+        this._currentQuery = searchQuery;
         this._cursor = 0;
+
+        var query = searchQuery.Query;
+        var extensionFilter = searchQuery.AllowedExtensions;
+        var location = searchQuery.Location;
+
+        var temp = extensionFilter is []
+            ? this._allFiles
+            : this._allFiles.Where(f => extensionFilter.Contains(Path.GetExtension(f.TargetPath), StringComparer.InvariantCultureIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(location))
+        {
+            temp = temp.Where(f => f.TargetPath.StartsWith(location, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            this._filteredFiles = this._allFiles;
+            this._filteredFiles = [.. temp];
         }
         else
         {
             var useGlob = query.Contains('?') || query.Contains('*');
+
             if (useGlob)
             {
-                var glob = Glob.Parse(this._currentQuery, new() { Evaluation = { CaseInsensitive = true } });
-                this._filteredFiles = [.. this._allFiles.Where(file => FilterGlob(file, glob!))];
+                var glob = Glob.Parse(query, new() { Evaluation = { CaseInsensitive = true } });
+                this._filteredFiles = [.. temp.Where(file => FilterGlob(file, glob!))];
             }
             else
             {
-                this._filteredFiles = [.. this._allFiles.Where(file => FilterPlain(file, query))];
+                this._filteredFiles = [.. temp.Where(file => FilterPlain(file, query))];
             }
         }
 
@@ -165,7 +179,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     public IList<RecentFileListItem> LoadNextPage(Guid searchToken, CancellationToken ct = default)
     {
         List<IRecentFile> slice;
-        
+
         lock (this._syncRoot)
         {
             if (this._currentSearchToken != searchToken)

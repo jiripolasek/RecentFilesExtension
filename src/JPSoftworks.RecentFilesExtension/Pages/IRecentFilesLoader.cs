@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
@@ -27,14 +27,16 @@ internal interface IRecentFilesLoader : IDisposable
     /// True if there's more data to page through.
     /// </summary>
     bool HasMore { get; }
-    
+
     /// <summary>
     /// Resets the filter to a new search string (empty = no filter) and rewinds paging.
     /// </summary>
-    void Restart(string? searchQuery, Guid searchToken);
-    
+    void Restart(SearchQuery searchQuery, Guid searchToken);
+
     /// <summary>
     /// Synchronous version of LoadNextPage for backward compatibility.
     /// </summary>
     IList<RecentFileListItem> LoadNextPage(Guid searchToken, CancellationToken ct = default);
 }
+
+internal record SearchQuery(string Query, string[] AllowedExtensions, string Location);

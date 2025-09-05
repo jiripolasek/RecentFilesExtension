@@ -16,8 +16,9 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     private readonly IRecentFilesProvider _recentFilesProvider;
     private readonly IRecentFilesLoader _loader;
-    private Guid _searchToken = Guid.Empty;
+    private readonly RecentFilesFilters _filters;
 
+    private Guid _searchToken = Guid.Empty;
     private List<IListItem> _loadedItems = [];
     private bool _sourceChanged = true;
 
@@ -39,6 +40,10 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             Subtitle = "Loading your recent files",
             Icon = Icons.MainIcon,
         };
+
+        this._filters = new RecentFilesFilters();
+        this._filters.PropChanged += (_, _) => { this.TriggerSearch(this.SearchText); };
+        this.Filters = this._filters;
 
         this.IsLoading = true;
         this.TriggerSearch("");
@@ -91,9 +96,13 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
         try
         {
+            var filter = Filters.GetFilters().OfType<IFilter>().FirstOrDefault(t => t.Id == Filters.CurrentFilterId);
+            var selectedFilter = (filter as FileFilter)?.Extensions ?? [];
+            var locationFilter = (filter as LocationFilter)?.Location ?? "";
+
             this._searchToken = Guid.NewGuid();
             this._sourceChanged = false;
-            this._loader.Restart(newSearch, this._searchToken);
+            this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter), this._searchToken);
             this._loadedItems = [];
             this.LoadMore();
         }
