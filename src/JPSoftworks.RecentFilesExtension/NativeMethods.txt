@@ -19,3 +19,6 @@ HINSTANCE
 SHGetFileInfo
 ShellExecuteEx
 SHGetNameFromIDList
+SHGetKnownFolderPath
+FOLDERID
+FOLDERID_Downloads
