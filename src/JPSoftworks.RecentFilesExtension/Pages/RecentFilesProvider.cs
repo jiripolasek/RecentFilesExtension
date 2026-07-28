@@ -13,6 +13,7 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 {
     private static readonly TimeSpan RefreshDebounceInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan SlowShortcutThreshold = TimeSpan.FromMilliseconds(250);
     private const int MaxRecentFileCount = 500;
     private const string ShortcutFileSearchPattern = "*.lnk";
 
@@ -152,25 +153,31 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     private async Task InitialCacheLoadAsync()
     {
+        var stopwatch = Stopwatch.StartNew();
+        Logger.LogDebug("Initial cache load started");
+
         try
         {
             await Task.Run(this.RefreshCache, this._cancellationToken);
             this._cancellationToken.ThrowIfCancellationRequested();
 
+            int itemCount;
             lock (this._syncRoot)
             {
                 this._isInitialLoadComplete = true;
+                itemCount = this._cachedRecentFiles.Count;
             }
 
+            Logger.LogDebug($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
             this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException)
         {
-            // Expected when disposing
+            Logger.LogDebug($"Initial cache load canceled after {stopwatch.ElapsedMilliseconds}ms");
         }
         catch (Exception ex)
         {
-            Logger.LogError("Failed to complete initial cache load", ex);
+            Logger.LogError($"Failed to complete initial cache load after {stopwatch.ElapsedMilliseconds}ms", ex);
 
             lock (this._syncRoot)
             {
@@ -327,6 +334,8 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             if (this._cancellationToken.IsCancellationRequested)
                 break;
 
+            var shortcutStartedAt = Stopwatch.GetTimestamp();
+
             try
             {
                 if (!this._shellLinksHelper.TryGetShellLink(fileInfo, out var shortcutFile))
@@ -358,9 +367,17 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             {
                 Logger.LogError($"Failed to process shortcut {fileInfo.FullName}", ex);
             }
+            finally
+            {
+                var shortcutElapsed = Stopwatch.GetElapsedTime(shortcutStartedAt);
+                if (shortcutElapsed >= SlowShortcutThreshold)
+                {
+                    Logger.LogWarning($"Slow shortcut processing | Took {shortcutElapsed.TotalMilliseconds:F0}ms: {fileInfo.FullName}");
+                }
+            }
         }
 
-        Logger.LogDebug($"Refresh 20 | Finished in {stopwatch.ElapsedMilliseconds}ms");
+        Logger.LogDebug($"Refresh 20 | Loaded {items.Count} recent files in {stopwatch.ElapsedMilliseconds}ms");
 
         stopwatch.Stop();
 

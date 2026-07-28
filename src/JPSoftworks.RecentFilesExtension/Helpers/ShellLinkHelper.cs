@@ -50,43 +50,14 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
     public string RetrieveTargetPath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            throw new FileNotFoundException("Shortcut file not found.", path);
-        }
-
-        // Load the .lnk file
-        this._persistFile.Load(path, (int)STGM.STGM_READ);
-
-        // Comment for now, it's too slow; possibly revisit later when the list is updated on background
-        //// Resolve without UI
-        //try
-        //{
-        //    this._shellLink.Resolve(HWND.Null, (uint)(SLR_FLAGS.SLR_NO_UI | SLR_FLAGS.SLR_NOUPDATE));
-        //}
-        //catch (Exception ex)
-        //{
-        //    Logger.LogError(ex);
-        //}
-
-        // Retrieve target via GetPath using Span overload
-        var data = new WIN32_FIND_DATAW();
-        Span<char> buffer = stackalloc char[MAX_PATH];
-        this._shellLink.GetPath(buffer, ref data, (int)SLGP_FLAGS.SLGP_RAWPATH);
-        var term = buffer.IndexOf('\0');
-        if (term < 0)
-        {
-            term = buffer.Length;
-        }
-
-        this.TargetPath = new string(buffer[..term]);
+        this.LoadTargetPath(path);
 
         // Read description via Span overload
         Span<char> descBuf = stackalloc char[MAX_PATH];
         try
         {
             this._shellLink.GetDescription(descBuf);
-            term = descBuf.IndexOf('\0');
+            var term = descBuf.IndexOf('\0');
             if (term < 0)
             {
                 term = descBuf.Length;
@@ -104,7 +75,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         try
         {
             this._shellLink.GetArguments(argBuf);
-            term = argBuf.IndexOf('\0');
+            var term = argBuf.IndexOf('\0');
             if (term < 0)
             {
                 term = argBuf.Length;
@@ -124,7 +95,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         try
         {
             this._shellLink.GetIconLocation(iconLocationBuffer, out var iconIndex);
-            term = iconLocationBuffer.IndexOf('\0');
+            var term = iconLocationBuffer.IndexOf('\0');
             if (term < 0)
             {
                 term = iconLocationBuffer.Length;
@@ -193,6 +164,47 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
             this.IconIndex = -1;
         }
 
+        this.RetrieveDisplayName(path);
+        return this.TargetPath;
+    }
+
+    internal string LoadTargetPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            throw new FileNotFoundException("Shortcut file not found.", path);
+        }
+
+        // Load the .lnk file
+        this._persistFile.Load(path, (int)STGM.STGM_READ);
+
+        // Comment for now, it's too slow; possibly revisit later when the list is updated on background
+        //// Resolve without UI
+        //try
+        //{
+        //    this._shellLink.Resolve(HWND.Null, (uint)(SLR_FLAGS.SLR_NO_UI | SLR_FLAGS.SLR_NOUPDATE));
+        //}
+        //catch (Exception ex)
+        //{
+        //    Logger.LogError(ex);
+        //}
+
+        // Retrieve target via GetPath using Span overload
+        var data = new WIN32_FIND_DATAW();
+        Span<char> buffer = stackalloc char[MAX_PATH];
+        this._shellLink.GetPath(buffer, ref data, (int)SLGP_FLAGS.SLGP_RAWPATH);
+        var term = buffer.IndexOf('\0');
+        if (term < 0)
+        {
+            term = buffer.Length;
+        }
+
+        this.TargetPath = new string(buffer[..term]);
+        return this.TargetPath;
+    }
+
+    internal string RetrieveDisplayName(string path)
+    {
         try
         {
             this.DisplayName = GetLinkTargetDisplayName(this._shellLink);
@@ -206,7 +218,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 #endif
         }
 
-        return this.TargetPath;
+        return this.DisplayName;
     }
 
     private static unsafe string GetLinkTargetDisplayName(IShellLinkW link)
