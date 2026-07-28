@@ -58,7 +58,7 @@ internal class CachedShellLinksHelper
         }
 
         // build shell link helper
-        var shellLink = new ShellLinkHelper();
+        using var shellLink = new ShellLinkHelper();
         shellLink.RetrieveTargetPath(shortcutFileInfo.FullName);
 
         var target = shellLink.TargetPath;
