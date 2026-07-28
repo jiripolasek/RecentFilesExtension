@@ -1,12 +1,13 @@
 ﻿// ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
 using Windows.Win32.UI.Shell;
@@ -211,16 +212,23 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
     private static unsafe string GetLinkTargetDisplayName(IShellLinkW link)
     {
         ITEMIDLIST* ppidl = null;
+        PWSTR pwsz = default;
+
         try
         {
             link.GetIDList(out ppidl);
-            SHGetNameFromIDList(*ppidl, SIGDN.SIGDN_NORMALDISPLAY, out var pwsz)
+            SHGetNameFromIDList(*ppidl, SIGDN.SIGDN_NORMALDISPLAY, out pwsz)
                 .ThrowOnFailure();
-            var result = new string(pwsz.AsSpan());
-            return result;
+
+            return new string(pwsz.AsSpan());
         }
         finally
         {
+            if (pwsz != null)
+            {
+                Marshal.FreeCoTaskMem((IntPtr)pwsz.Value);
+            }
+
             if (ppidl != null)
             {
                 Marshal.FreeCoTaskMem((IntPtr)ppidl);
