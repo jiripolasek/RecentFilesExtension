@@ -15,6 +15,10 @@ internal sealed partial class FileFilter : Filter
     public required string[] Extensions { get; init; }
 }
 
+internal sealed partial class FoldersFilter : Filter
+{
+}
+
 internal sealed partial class LocationFilter : Filter
 {
     public required string Location { get; init; }

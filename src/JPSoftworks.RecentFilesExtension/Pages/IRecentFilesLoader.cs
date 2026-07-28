@@ -39,4 +39,4 @@ internal interface IRecentFilesLoader : IDisposable
     IList<RecentFileListItem> LoadNextPage(Guid searchToken, CancellationToken ct = default);
 }
 
-internal record SearchQuery(string Query, string[] AllowedExtensions, string Location);
+internal record SearchQuery(string Query, string[] AllowedExtensions, string Location, bool ShowOnlyFolders);

@@ -18,7 +18,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     private List<IRecentFile> _allFiles = [];
     private List<IRecentFile> _filteredFiles = [];
     private int _cursor;
-    private SearchQuery _currentQuery = new(string.Empty, [], string.Empty);
+    private SearchQuery _currentQuery = new(string.Empty, [], string.Empty, false);
     private Guid _currentSearchToken;
     private bool _isInitialized;
 
@@ -40,6 +40,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         this._pageSize = pageSize;
         this._recentFilesProvider = recentFilesProvider;
         this._recentFilesProvider.RecentFilesChanged += this.OnRecentFilesChanged;
+        this._recentFilesProvider.InitialLoadComplete += this.OnInitialLoadComplete;
 
         this.InitializeFromProvider();
     }
@@ -60,39 +61,57 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
 
     private void InitializeFromProvider()
     {
-        var files = this._recentFilesProvider.GetRecentFiles().ToList();
+        bool isInitialLoadComplete;
 
         lock (this._syncRoot)
         {
-            this._allFiles = files;
+            this._allFiles = this._recentFilesProvider.GetRecentFiles().ToList();
             this._filteredFiles = this._allFiles;
-            this._isInitialized = this._recentFilesProvider.IsInitialLoadComplete;
+            isInitialLoadComplete = this._recentFilesProvider.IsInitialLoadComplete;
         }
 
-        if (this._isInitialized)
+        if (isInitialLoadComplete)
         {
-            this.InitializationComplete?.Invoke(this, EventArgs.Empty);
-            this.SourceChanged?.Invoke(this, EventArgs.Empty);
+            this.CompleteInitialization();
         }
     }
 
     private void OnRecentFilesChanged(object? sender, IList<IRecentFile> newList)
     {
-        bool wasInitialized;
+        bool isInitialized;
+
         lock (this._syncRoot)
         {
             this._allFiles = newList.ToList();
             this.ApplyFilterInternal(this._currentQuery);
-            wasInitialized = this._isInitialized;
+            isInitialized = this._isInitialized;
+        }
+
+        if (isInitialized)
+        {
+            this.SourceChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void OnInitialLoadComplete(object? sender, EventArgs e)
+    {
+        this.CompleteInitialization();
+    }
+
+    private void CompleteInitialization()
+    {
+        bool initializationCompleted;
+
+        lock (this._syncRoot)
+        {
+            initializationCompleted = !this._isInitialized;
             this._isInitialized = true;
         }
 
-        if (!wasInitialized)
+        if (initializationCompleted)
         {
             this.InitializationComplete?.Invoke(this, EventArgs.Empty);
         }
-
-        this.SourceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -119,6 +138,11 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         var temp = extensionFilter is []
             ? this._allFiles
             : this._allFiles.Where(f => extensionFilter.Contains(Path.GetExtension(f.TargetPath), StringComparer.InvariantCultureIgnoreCase));
+
+        if (searchQuery.ShowOnlyFolders)
+        {
+            temp = temp.Where(static f => f.IsDirectory());
+        }
 
         if (!string.IsNullOrWhiteSpace(location))
         {
@@ -207,5 +231,6 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     public void Dispose()
     {
         this._recentFilesProvider.RecentFilesChanged -= this.OnRecentFilesChanged;
+        this._recentFilesProvider.InitialLoadComplete -= this.OnInitialLoadComplete;
     }
 }

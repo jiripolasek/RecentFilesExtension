@@ -96,13 +96,14 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
         try
         {
-            var filter = Filters.GetFilters().OfType<IFilter>().FirstOrDefault(t => t.Id == Filters.CurrentFilterId);
+            var filter = this._filters.GetFilters().OfType<IFilter>().FirstOrDefault(t => t.Id == this._filters.CurrentFilterId);
             var selectedFilter = (filter as FileFilter)?.Extensions ?? [];
             var locationFilter = (filter as LocationFilter)?.Location ?? "";
+            var onlyFolders = filter is FoldersFilter;
 
             this._searchToken = Guid.NewGuid();
             this._sourceChanged = false;
-            this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter), this._searchToken);
+            this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders), this._searchToken);
             this._loadedItems = [];
             this.LoadMore();
         }

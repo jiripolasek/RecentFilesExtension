@@ -143,6 +143,14 @@ internal class RecentFilesFilters : Filters
                 ],
                 Icon = Icons.Filters.Database
             },
+
+            new Separator(),
+
+            new FoldersFilter
+            {
+                Name = "Folders", Id = "folders", Icon = Icons.Filters.Folders
+            },
+
             new Separator(),
 
             new LocationFilter("folder_documents", Environment.SpecialFolder.MyDocuments)

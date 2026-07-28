@@ -26,14 +26,6 @@ internal sealed class RecentShortcutFile : IRecentFile
 
     public bool IsDirectory()
     {
-        if (!Path.Exists(this.TargetPath))
-        {
-            return false;
-        }
-
-        var attr = File.GetAttributes(this.TargetPath);
-
-        // detect whether it is a directory or file
-        return (attr & FileAttributes.Directory) == FileAttributes.Directory;
+        return Directory.Exists(this.TargetPath);
     }
 }
