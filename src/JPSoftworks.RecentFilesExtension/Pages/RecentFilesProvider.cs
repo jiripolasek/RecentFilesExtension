@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Diagnostics;
@@ -65,7 +65,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
     }
 
     /// <summary>
-    /// Returns the *cached* list of recent files.  
+    /// Returns the *cached* list of recent files.
     /// Callers should subscribe to <see cref="RecentFilesChanged"/> for updates.
     /// </summary>
     public IList<IRecentFile> GetRecentFiles()
@@ -105,7 +105,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             cancellationToken, this._cancellationTokenSource.Token);
 
         var tcs = new TaskCompletionSource<bool>();
-        
+
         void OnInitialLoadComplete(object? sender, EventArgs e)
         {
             tcs.TrySetResult(true);
@@ -166,7 +166,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         catch (Exception ex)
         {
             Logger.LogError("Failed to complete initial cache load", ex);
-            
+
             lock (this._syncRoot)
             {
                 this._isInitialLoadComplete = true;
@@ -216,10 +216,8 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             lock (this._syncRoot)
             {
                 var stopwatch = Stopwatch.StartNew();
-                changed = newList.Count != this._cachedRecentFiles.Count
-                          || !newList.Select(static i => i.TargetPath)
-                                     .SequenceEqual(this._cachedRecentFiles.Select(static i => i.TargetPath), StringComparer.OrdinalIgnoreCase);
-                
+                changed = !HaveSameItems(newList, this._cachedRecentFiles);
+
                 Logger.LogDebug($"Refresh 30 | Cache updated: {changed}, took {stopwatch.ElapsedMilliseconds}ms");
                 stopwatch.Stop();
 
@@ -239,6 +237,29 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         {
             this._refreshSemaphore.Release();
         }
+    }
+
+    private static bool HaveSameItems(List<IRecentFile> first, List<IRecentFile> second)
+    {
+        if (first.Count != second.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < first.Count; i++)
+        {
+            var firstItem = first[i];
+            var secondItem = second[i];
+
+            if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
+                !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
+                !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private List<IRecentFile> LoadRecentFilesFromDisk()
@@ -268,7 +289,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             {
                 if (!this._shellLinksHelper.TryGetShellLink(fileInfo, out var shortcutFile))
                     continue;
-                
+
                 // avoid duplicates
                 var isNetwork = shortcutFile.TargetPath.IsNetworkPath();
                 var key = isNetwork ? shortcutFile.TargetPath : shortcutFile.TargetPath.ToLowerInvariant();
@@ -298,7 +319,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         }
 
         Logger.LogDebug($"Refresh 20 | Finished in {stopwatch.ElapsedMilliseconds}ms");
-        
+
         stopwatch.Stop();
 
         return items;
