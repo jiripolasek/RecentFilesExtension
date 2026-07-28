@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Diagnostics.CodeAnalysis;
@@ -15,9 +15,8 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 /// </summary>
 internal class CachedShellLinksHelper
 {
-    // cache using a file name and check last write time
-    private readonly Dictionary<string, ShellLinkCacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
-    record struct ShellLinkCacheEntry(RecentShortcutFile? ShortcutFile);
+    // Cache successful reads by file path and last-write time. Failed reads may be transient and are retried.
+    private readonly Dictionary<string, RecentShortcutFile> _cache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Attempts to retrieve a shell link from the specified shortcut file.
@@ -32,23 +31,15 @@ internal class CachedShellLinksHelper
     /// <returns><see langword="true"/> if the shell link is successfully retrieved and valid; otherwise, <see langword="false"/>.</returns>
     public bool TryGetShellLink(FileInfo shortcutFileInfo, [NotNullWhen(true)] out RecentShortcutFile? shortcutFile)
     {
-        if (this._cache.TryGetValue(shortcutFileInfo.FullName, out var entry))
+        if (this._cache.TryGetValue(shortcutFileInfo.FullName, out var cachedShortcut))
         {
-            if (entry.ShortcutFile == null)
+            if (shortcutFileInfo.Exists && shortcutFileInfo.LastWriteTimeUtc == cachedShortcut.FileInfo.LastWriteTimeUtc)
             {
-                shortcutFile = null;
-                return false;
-            }
-
-            if (shortcutFileInfo.Exists && shortcutFileInfo.LastWriteTimeUtc == entry.ShortcutFile.FileInfo.LastWriteTimeUtc)
-            {
-                shortcutFile = entry.ShortcutFile;
+                shortcutFile = cachedShortcut;
                 return true;
             }
-            else
-            {
-                this._cache.Remove(shortcutFileInfo.FullName);
-            }
+
+            this._cache.Remove(shortcutFileInfo.FullName);
         }
 
         shortcutFile = null;
@@ -64,27 +55,24 @@ internal class CachedShellLinksHelper
         var target = shellLink.TargetPath;
         if (string.IsNullOrWhiteSpace(target))
         {
-            this._cache[shortcutFileInfo.FullName] = new(null);
             return false;
         }
 
         var isNetwork = target.IsNetworkPath();
         if (!isNetwork && !File.Exists(target) && !Directory.Exists(target))
         {
-            this._cache[shortcutFileInfo.FullName] = new(null);
             return false;
         }
 
         try
         {
             shortcutFile = new(shortcutFileInfo, shellLink.DisplayName, shellLink.TargetPath);
-            this._cache[shortcutFileInfo.FullName] = new(shortcutFile);
+            this._cache[shortcutFileInfo.FullName] = shortcutFile;
             return true;
         }
         catch (Exception ex)
         {
             Logger.LogError($"Failed to retrieve shell link from {shortcutFileInfo.FullName}", ex);
-            this._cache[shortcutFileInfo.FullName] = new(null);
             shortcutFile = null;
             return false;
         }
