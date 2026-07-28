@@ -22,7 +22,6 @@ internal sealed partial class RecentFileListItem : ListItem
 
         this.Title = recentFile.DisplayName;
         this.Subtitle = recentFile.TargetPath;
-        this.Icon = GetIcon(recentFile);
 
         List<IContextItem> moreCommands = [];
         if (!string.IsNullOrWhiteSpace(recentFile.TargetPath))
@@ -32,14 +31,25 @@ internal sealed partial class RecentFileListItem : ListItem
             moreCommands.Add(new CommandContextItem(new JPCommands.CopyPathCommand(recentFile)) { RequestedShortcut = KeyChords.CopyPath });
         }
         this.MoreCommands = [.. moreCommands];
+
+        _ = Task.Run(() => this.LoadIconAsync(recentFile));
     }
 
-    private static IconInfo? GetIcon(IRecentFile recentShortcutFile)
+    private async Task LoadIconAsync(IRecentFile recentFile)
+    {
+        var icon = await GetIconAsync(recentFile).ConfigureAwait(false);
+        if (icon != null)
+        {
+            this.Icon = icon;
+        }
+    }
+
+    private static async Task<IconInfo?> GetIconAsync(IRecentFile recentShortcutFile)
     {
         // Try target path first if it exists and is not a network path
         if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath) && !recentShortcutFile.TargetPath.IsNetworkPath())
         {
-            var icon = TryGetThumbnailIcon(recentShortcutFile.TargetPath);
+            var icon = await TryGetThumbnailIconAsync(recentShortcutFile.TargetPath).ConfigureAwait(false);
             if (icon != null)
                 return icon;
         }
@@ -47,17 +57,17 @@ internal sealed partial class RecentFileListItem : ListItem
         // Fall back to full path if it's not a network path
         if (!recentShortcutFile.FullPath.IsNetworkPath())
         {
-            return TryGetThumbnailIcon(recentShortcutFile.FullPath);
+            return await TryGetThumbnailIconAsync(recentShortcutFile.FullPath).ConfigureAwait(false);
         }
 
         return null;
     }
 
-    private static IconInfo? TryGetThumbnailIcon(string path)
+    private static async Task<IconInfo?> TryGetThumbnailIconAsync(string path)
     {
         try
         {
-            var stream = ThumbnailHelper.GetThumbnail(path).Result;
+            var stream = await ThumbnailHelper.GetThumbnail(path).ConfigureAwait(false);
             if (stream != null)
             {
                 var data = new IconData(RandomAccessStreamReference.CreateFromStream(stream)!);
