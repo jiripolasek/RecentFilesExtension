@@ -23,12 +23,15 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     // cache + sync
     private readonly Lock _syncRoot = new();
+    private readonly Lock _lifecycleLock = new();
     private List<IRecentFile> _cachedRecentFiles = [];
     private bool _isInitialLoadComplete;
+    private bool _isRefreshInProgress;
+    private bool _isDisposed;
 
     private readonly System.Timers.Timer _reloadTimer = new(RefreshDebounceInterval) { AutoReset = false };
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly SemaphoreSlim _refreshSemaphore = new(1, 1);
+    private readonly CancellationToken _cancellationToken;
 
     /// <summary>
     /// Fired whenever the list of recent files actually changes.
@@ -42,6 +45,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     internal RecentFilesProvider()
     {
+        this._cancellationToken = this._cancellationTokenSource.Token;
         this._recentFilesFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
 
         if (!string.IsNullOrWhiteSpace(this._recentFilesFolderPath))
@@ -61,7 +65,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         }
 
         // Start initial cache loading on background thread
-        _ = Task.Run(this.InitialCacheLoadAsync, this._cancellationTokenSource.Token);
+        _ = Task.Run(this.InitialCacheLoadAsync, this._cancellationToken);
     }
 
     /// <summary>
@@ -102,7 +106,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             return true;
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, this._cancellationTokenSource.Token);
+            cancellationToken, this._cancellationToken);
 
         var tcs = new TaskCompletionSource<bool>();
 
@@ -150,7 +154,8 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
     {
         try
         {
-            await Task.Run(this.RefreshCache, this._cancellationTokenSource.Token);
+            await Task.Run(this.RefreshCache, this._cancellationToken);
+            this._cancellationToken.ThrowIfCancellationRequested();
 
             lock (this._syncRoot)
             {
@@ -178,24 +183,22 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     private void OnFsEvent(object sender, FileSystemEventArgs e)
     {
-        Logger.LogDebug($"File system event: {e.ChangeType} {e.Name} | {e.FullPath}");
+        lock (this._lifecycleLock)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
 
-        this._reloadTimer.Stop();
-        this._reloadTimer.Start();
+            Logger.LogDebug($"File system event: {e.ChangeType} {e.Name} | {e.FullPath}");
+            this.RestartReloadTimer();
+        }
     }
 
     private void RefreshCache()
     {
-        if (this._cancellationTokenSource.Token.IsCancellationRequested)
-            return;
-
-        // Try to acquire the semaphore immediately - if can't, it means refresh is already in progress
-        if (!this._refreshSemaphore.Wait(0))
+        if (!this.TryBeginRefresh())
         {
-            // If a refresh is already in progress, schedule another one for later
-            // This ensures we don't miss changes that occurred during the current refresh
-            this._reloadTimer.Stop();
-            this._reloadTimer.Start();
             return;
         }
 
@@ -209,6 +212,11 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             catch (Exception ex)
             {
                 Logger.LogError("Failed to reload recent files", ex);
+                return;
+            }
+
+            if (this._cancellationToken.IsCancellationRequested)
+            {
                 return;
             }
 
@@ -227,7 +235,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
                 }
             }
 
-            if (changed || this._first)
+            if (!this._cancellationToken.IsCancellationRequested && (changed || this._first))
             {
                 this._first = false;
                 this.RecentFilesChanged?.Invoke(null, [.. newList]);
@@ -235,7 +243,41 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         }
         finally
         {
-            this._refreshSemaphore.Release();
+            this.EndRefresh();
+        }
+    }
+
+    private bool TryBeginRefresh()
+    {
+        lock (this._lifecycleLock)
+        {
+            if (this._isDisposed || this._cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            if (this._isRefreshInProgress)
+            {
+                this.RestartReloadTimer();
+                return false;
+            }
+
+            this._isRefreshInProgress = true;
+            return true;
+        }
+    }
+
+    private void RestartReloadTimer()
+    {
+        this._reloadTimer.Stop();
+        this._reloadTimer.Start();
+    }
+
+    private void EndRefresh()
+    {
+        lock (this._lifecycleLock)
+        {
+            this._isRefreshInProgress = false;
         }
     }
 
@@ -282,7 +324,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             if (counter >= MaxRecentFileCount)
                 break;
 
-            if (this._cancellationTokenSource.Token.IsCancellationRequested)
+            if (this._cancellationToken.IsCancellationRequested)
                 break;
 
             try
@@ -327,10 +369,19 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     public void Dispose()
     {
-        this._cancellationTokenSource.Cancel();
+        lock (this._lifecycleLock)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            this._isDisposed = true;
+            this._cancellationTokenSource.Cancel();
+        }
+
         this._fileSystemWatcher?.Dispose();
         this._reloadTimer.Dispose();
-        this._refreshSemaphore.Dispose();
         this._cancellationTokenSource.Dispose();
     }
 }
