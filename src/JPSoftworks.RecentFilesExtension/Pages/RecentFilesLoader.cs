@@ -146,7 +146,8 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
 
         if (!string.IsNullOrWhiteSpace(location))
         {
-            temp = temp.Where(f => f.TargetPath.StartsWith(location, StringComparison.OrdinalIgnoreCase));
+            var normalizedLocation = Path.TrimEndingDirectorySeparator(location);
+            temp = temp.Where(f => IsPathInLocation(f.TargetPath, normalizedLocation));
         }
 
         if (string.IsNullOrWhiteSpace(query))
@@ -180,6 +181,23 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         {
             return glob.IsMatch(recentFile.DisplayName) ||
                    glob.IsMatch(recentFile.TargetPath);
+        }
+
+        static bool IsPathInLocation(string path, string normalizedLocation)
+        {
+            if (!path.StartsWith(normalizedLocation, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return path.Length == normalizedLocation.Length ||
+                   Path.EndsInDirectorySeparator(normalizedLocation) ||
+                   IsDirectorySeparator(path[normalizedLocation.Length]);
+        }
+
+        static bool IsDirectorySeparator(char value)
+        {
+            return value == Path.DirectorySeparatorChar || value == Path.AltDirectorySeparatorChar;
         }
     }
 
