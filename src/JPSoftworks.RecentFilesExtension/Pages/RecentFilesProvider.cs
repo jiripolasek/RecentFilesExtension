@@ -13,7 +13,6 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 {
     private static readonly TimeSpan RefreshDebounceInterval = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan SlowShortcutThreshold = TimeSpan.FromMilliseconds(250);
     private const int MaxRecentFileCount = 500;
     private const string ShortcutFileSearchPattern = "*.lnk";
 
@@ -334,8 +333,6 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             if (this._cancellationToken.IsCancellationRequested)
                 break;
 
-            var shortcutStartedAt = Stopwatch.GetTimestamp();
-
             try
             {
                 if (!this._shellLinksHelper.TryGetShellLink(fileInfo, out var shortcutFile))
@@ -366,14 +363,6 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             catch (Exception ex)
             {
                 Logger.LogError($"Failed to process shortcut {fileInfo.FullName}", ex);
-            }
-            finally
-            {
-                var shortcutElapsed = Stopwatch.GetElapsedTime(shortcutStartedAt);
-                if (shortcutElapsed >= SlowShortcutThreshold)
-                {
-                    Logger.LogWarning($"Slow shortcut processing | Took {shortcutElapsed.TotalMilliseconds:F0}ms: {fileInfo.FullName}");
-                }
             }
         }
 
