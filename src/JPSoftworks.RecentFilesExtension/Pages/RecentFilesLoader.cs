@@ -237,7 +237,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         foreach (var shortcut in slice)
         {
             ct.ThrowIfCancellationRequested();
-            entries.Add(new(shortcut));
+            entries.Add(new(shortcut, ct));
         }
 
         lock (this._syncRoot)

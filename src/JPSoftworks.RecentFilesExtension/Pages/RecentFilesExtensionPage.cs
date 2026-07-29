@@ -18,6 +18,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private readonly IRecentFilesLoader _loader;
     private readonly RecentFilesFilters _filters;
     private readonly Lock _syncRoot = new();
+    private CancellationTokenSource _searchCancellationTokenSource = new();
 
     private Guid _searchToken = Guid.Empty;
     private List<IListItem> _loadedItems = [];
@@ -130,19 +131,37 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             var onlyFolders = filter is FoldersFilter;
 
             var searchToken = Guid.NewGuid();
+            var nextCancellationTokenSource = new CancellationTokenSource();
+            CancellationTokenSource previousCancellationTokenSource;
             lock (this._syncRoot)
             {
                 if (this._isDisposed)
                 {
+                    nextCancellationTokenSource.Dispose();
                     return;
                 }
 
+                try
+                {
+                    this._loader.Restart(
+                        new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders),
+                        searchToken);
+                }
+                catch
+                {
+                    nextCancellationTokenSource.Dispose();
+                    throw;
+                }
+
+                previousCancellationTokenSource = this._searchCancellationTokenSource;
+                this._searchCancellationTokenSource = nextCancellationTokenSource;
                 this._searchToken = searchToken;
                 this._sourceChanged = false;
-                this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders), searchToken);
                 this._loadedItems = [];
             }
 
+            previousCancellationTokenSource.Cancel();
+            previousCancellationTokenSource.Dispose();
             this.LoadMore(searchToken);
         }
         catch (Exception ex)
@@ -159,6 +178,8 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     private void LoadMore(Guid? expectedSearchToken)
     {
+        CancellationToken cancellationToken = default;
+
         try
         {
             this.IsLoading = true;
@@ -173,7 +194,8 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                     return;
                 }
 
-                var items = this._loader.LoadNextPage(this._searchToken, CancellationToken.None);
+                cancellationToken = this._searchCancellationTokenSource.Token;
+                var items = this._loader.LoadNextPage(this._searchToken, cancellationToken);
                 this._loadedItems.AddRange(items);
                 itemCount = this._loadedItems.Count;
                 hasMore = this._loader.HasMore;
@@ -181,6 +203,10 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
             this.HasMoreItems = hasMore;
             this.RaiseItemsChanged(itemCount);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected when a search is superseded or the page is disposed.
         }
         catch (Exception ex)
         {
@@ -241,6 +267,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     public void Dispose()
     {
+        CancellationTokenSource searchCancellationTokenSource;
         lock (this._syncRoot)
         {
             if (this._isDisposed)
@@ -249,8 +276,11 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             }
 
             this._isDisposed = true;
+            searchCancellationTokenSource = this._searchCancellationTokenSource;
         }
 
+        searchCancellationTokenSource.Cancel();
+        searchCancellationTokenSource.Dispose();
         this._loader.SourceChanged -= this.OnSourceChanged;
         this._loader.InitializationComplete -= this.OnSourceInitialized;
         this._loader.Dispose();

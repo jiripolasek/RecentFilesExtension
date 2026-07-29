@@ -16,7 +16,11 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 
 internal sealed partial class RecentFileListItem : ListItem
 {
-    internal RecentFileListItem(IRecentFile recentFile) : base(new JPCommands.OpenFileCommand(recentFile))
+    private const int MaxConcurrentIconLoads = 4;
+    private static readonly SemaphoreSlim IconLoadSemaphore = new(MaxConcurrentIconLoads);
+
+    internal RecentFileListItem(IRecentFile recentFile, CancellationToken cancellationToken = default)
+        : base(new JPCommands.OpenFileCommand(recentFile))
     {
         ArgumentNullException.ThrowIfNull(recentFile);
 
@@ -32,32 +36,69 @@ internal sealed partial class RecentFileListItem : ListItem
         }
         this.MoreCommands = [.. moreCommands];
 
-        _ = Task.Run(() => this.LoadIconAsync(recentFile));
+        _ = Task.Run(
+            () => this.LoadIconAsync(recentFile, cancellationToken),
+            CancellationToken.None);
     }
 
-    private async Task LoadIconAsync(IRecentFile recentFile)
+    private async Task LoadIconAsync(IRecentFile recentFile, CancellationToken cancellationToken)
     {
-        var icon = await GetIconAsync(recentFile).ConfigureAwait(false);
-        if (icon != null)
+        var enteredSemaphore = false;
+
+        try
         {
-            this.Icon = icon;
+            await IconLoadSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            enteredSemaphore = true;
+
+            var icon = await GetIconAsync(recentFile, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (icon != null)
+            {
+                this.Icon = icon;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected when a search is superseded or the page is disposed.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("Failed to load the icon.", ex);
+        }
+        finally
+        {
+            if (enteredSemaphore)
+            {
+                IconLoadSemaphore.Release();
+            }
         }
     }
 
-    private static async Task<IconInfo?> GetIconAsync(IRecentFile recentShortcutFile)
+    private static async Task<IconInfo?> GetIconAsync(
+        IRecentFile recentShortcutFile,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Try target path first if it exists and is not a network path
         if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath) && !recentShortcutFile.TargetPath.IsNetworkPath())
         {
             var icon = await TryGetThumbnailIconAsync(recentShortcutFile.TargetPath).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (icon != null)
                 return icon;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Fall back to full path if it's not a network path
         if (!recentShortcutFile.FullPath.IsNetworkPath())
         {
-            return await TryGetThumbnailIconAsync(recentShortcutFile.FullPath).ConfigureAwait(false);
+            var icon = await TryGetThumbnailIconAsync(recentShortcutFile.FullPath).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return icon;
         }
 
         return null;
