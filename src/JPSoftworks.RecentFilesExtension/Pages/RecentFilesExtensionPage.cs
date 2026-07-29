@@ -126,7 +126,9 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         try
         {
             var filter = this._filters.GetFilters().OfType<IFilter>().FirstOrDefault(t => t.Id == this._filters.CurrentFilterId);
-            var selectedFilter = (filter as FileFilter)?.Extensions ?? [];
+            var selectedFileFilter = filter as FileFilter;
+            var selectedExtensions = selectedFileFilter?.Extensions ?? [];
+            var selectedFileNames = selectedFileFilter?.FileNames ?? [];
             var locationFilter = (filter as LocationFilter)?.Location ?? "";
             var onlyFolders = filter is FoldersFilter;
 
@@ -144,7 +146,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                 try
                 {
                     this._loader.Restart(
-                        new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders),
+                        new SearchQuery(newSearch, selectedExtensions, selectedFileNames, locationFilter, onlyFolders),
                         searchToken);
                 }
                 catch

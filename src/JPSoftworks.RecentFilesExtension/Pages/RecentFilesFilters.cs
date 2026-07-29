@@ -118,8 +118,11 @@ internal class RecentFilesFilters : Filters
                 Extensions =
                 [
                     ".sln", ".slnx", ".csproj", ".vcxproj", ".fsproj", ".xcodeproj",
-                    ".pyproj", ".vbproj", ".makefile", ".cmake", "CMakeLists.txt",
-                    ".gradle", ".pom", ".props", ".targets", ".proj"
+                    ".pyproj", ".vbproj", ".cmake", ".gradle", ".props", ".targets", ".proj"
+                ],
+                FileNames =
+                [
+                    "CMakeLists.txt", "Makefile", "pom.xml"
                 ],
                 Icon = Icons.Filters.Projects
             },

@@ -15,6 +15,8 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 internal sealed partial class FileFilter : Filter
 {
     public required string[] Extensions { get; init; }
+
+    public string[] FileNames { get; init; } = [];
 }
 
 internal sealed partial class FoldersFilter : Filter

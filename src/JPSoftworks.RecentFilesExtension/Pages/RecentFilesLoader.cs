@@ -18,7 +18,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     private List<IRecentFile> _allFiles = [];
     private List<IRecentFile> _filteredFiles = [];
     private int _cursor;
-    private SearchQuery _currentQuery = new(string.Empty, [], string.Empty, false);
+    private SearchQuery _currentQuery = new(string.Empty, [], [], string.Empty, false);
     private Guid _currentSearchToken;
     private bool _isInitialized;
 
@@ -133,11 +133,12 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
 
         var query = searchQuery.Query;
         var extensionFilter = searchQuery.AllowedExtensions;
+        var fileNameFilter = searchQuery.AllowedFileNames;
         var location = searchQuery.Location;
 
-        var temp = extensionFilter is []
+        var temp = extensionFilter is [] && fileNameFilter is []
             ? this._allFiles
-            : this._allFiles.Where(f => extensionFilter.Contains(Path.GetExtension(f.TargetPath), StringComparer.InvariantCultureIgnoreCase));
+            : this._allFiles.Where(file => MatchesFileFilter(file, extensionFilter, fileNameFilter));
 
         if (searchQuery.ShowOnlyFolders)
         {
@@ -175,6 +176,21 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         {
             return recentFile.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                    recentFile.TargetPath.Contains(q, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool MatchesFileFilter(
+            IRecentFile recentFile,
+            string[] allowedExtensions,
+            string[] allowedFileNames)
+        {
+            return allowedExtensions is not [] &&
+                       allowedExtensions.Contains(
+                           Path.GetExtension(recentFile.TargetPath),
+                           StringComparer.OrdinalIgnoreCase) ||
+                   allowedFileNames is not [] &&
+                       allowedFileNames.Contains(
+                           Path.GetFileName(recentFile.TargetPath),
+                           StringComparer.OrdinalIgnoreCase);
         }
 
         static bool FilterGlob(IRecentFile recentFile, Glob glob)
