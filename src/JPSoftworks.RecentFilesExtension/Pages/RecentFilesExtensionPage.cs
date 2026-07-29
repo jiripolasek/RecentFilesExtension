@@ -17,10 +17,12 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private readonly IRecentFilesProvider _recentFilesProvider;
     private readonly IRecentFilesLoader _loader;
     private readonly RecentFilesFilters _filters;
+    private readonly Lock _syncRoot = new();
 
     private Guid _searchToken = Guid.Empty;
     private List<IListItem> _loadedItems = [];
     private bool _sourceChanged = true;
+    private bool _isDisposed;
 
     public RecentFilesExtensionPage()
     {
@@ -69,18 +71,44 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     private void OnSourceChanged(object? sender, EventArgs e)
     {
-        this._sourceChanged = true;
+        lock (this._syncRoot)
+        {
+            if (!this._isDisposed)
+            {
+                this._sourceChanged = true;
+            }
+        }
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
-        this._sourceChanged = true;
+        lock (this._syncRoot)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            this._sourceChanged = true;
+        }
+
         this.TriggerSearch(this.SearchText);
     }
 
     public override void UpdateSearchText(string oldSearch, string newSearch)
     {
-        if (oldSearch != newSearch || newSearch == "" && this._sourceChanged)
+        bool sourceChanged;
+        lock (this._syncRoot)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            sourceChanged = this._sourceChanged;
+        }
+
+        if (oldSearch != newSearch || newSearch == "" && sourceChanged)
         {
             this.TriggerSearch(newSearch);
         }
@@ -101,11 +129,21 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             var locationFilter = (filter as LocationFilter)?.Location ?? "";
             var onlyFolders = filter is FoldersFilter;
 
-            this._searchToken = Guid.NewGuid();
-            this._sourceChanged = false;
-            this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders), this._searchToken);
-            this._loadedItems = [];
-            this.LoadMore();
+            var searchToken = Guid.NewGuid();
+            lock (this._syncRoot)
+            {
+                if (this._isDisposed)
+                {
+                    return;
+                }
+
+                this._searchToken = searchToken;
+                this._sourceChanged = false;
+                this._loader.Restart(new SearchQuery(newSearch, selectedFilter, locationFilter, onlyFolders), searchToken);
+                this._loadedItems = [];
+            }
+
+            this.LoadMore(searchToken);
         }
         catch (Exception ex)
         {
@@ -116,36 +154,81 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     public override void LoadMore()
     {
+        this.LoadMore(null);
+    }
+
+    private void LoadMore(Guid? expectedSearchToken)
+    {
         try
         {
             this.IsLoading = true;
-            var items = this._loader.LoadNextPage(this._searchToken, CancellationToken.None);
-            this._loadedItems.AddRange(items);
-            this.HasMoreItems = this._loader.HasMore;
-            this.IsLoading = !this._loader.IsInitialized;
 
-            this.RaiseItemsChanged(this._loadedItems.Count);
+            int itemCount;
+            bool hasMore;
+            lock (this._syncRoot)
+            {
+                if (this._isDisposed ||
+                    expectedSearchToken.HasValue && expectedSearchToken.Value != this._searchToken)
+                {
+                    return;
+                }
+
+                var items = this._loader.LoadNextPage(this._searchToken, CancellationToken.None);
+                this._loadedItems.AddRange(items);
+                itemCount = this._loadedItems.Count;
+                hasMore = this._loader.HasMore;
+            }
+
+            this.HasMoreItems = hasMore;
+            this.RaiseItemsChanged(itemCount);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex);
+
+            int itemCount;
+            lock (this._syncRoot)
+            {
+                itemCount = this._loadedItems.Count;
+            }
+
+            this.RaiseItemsChanged(itemCount);
+        }
+        finally
+        {
             this.IsLoading = !this._loader.IsInitialized;
-            this.RaiseItemsChanged(this._loadedItems.Count);
         }
     }
 
     public override IListItem[] GetItems()
     {
-        if (this._sourceChanged)
+        bool sourceChanged;
+        lock (this._syncRoot)
+        {
+            if (this._isDisposed)
+            {
+                return [];
+            }
+
+            sourceChanged = this._sourceChanged;
+        }
+
+        if (sourceChanged)
         {
             this.TriggerSearch(this.SearchText);
+        }
+
+        IListItem[] items;
+        lock (this._syncRoot)
+        {
+            items = this._loadedItems.ToArray();
         }
 
         var newEmptyContent = string.IsNullOrWhiteSpace(this.SearchText)
             ? NothingFoundEmptyContent
             : NothingFoundWithQueryEmptyContent;
 
-        if (this._loadedItems.Count == 0)
+        if (items.Length == 0)
         {
             if (this.EmptyContent != newEmptyContent)
             {
@@ -153,11 +236,21 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             }
         }
 
-        return this._loadedItems.ToArray();
+        return items;
     }
 
     public void Dispose()
     {
+        lock (this._syncRoot)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            this._isDisposed = true;
+        }
+
         this._loader.SourceChanged -= this.OnSourceChanged;
         this._loader.InitializationComplete -= this.OnSourceInitialized;
         this._loader.Dispose();
