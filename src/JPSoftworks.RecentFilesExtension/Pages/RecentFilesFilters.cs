@@ -9,7 +9,7 @@ using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
-internal class RecentFilesFilters : Filters
+internal sealed partial class RecentFilesFilters : Filters
 {
     private const string EverythingFilterId = "Everything";
 

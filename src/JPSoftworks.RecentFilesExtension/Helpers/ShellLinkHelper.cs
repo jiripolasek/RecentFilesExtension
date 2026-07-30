@@ -5,11 +5,8 @@
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Storage.FileSystem;
-using Windows.Win32.System.Com;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.Shell.Common;
 using static Windows.Win32.PInvoke;
@@ -26,6 +23,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 {
     private const int MAX_PATH = 260;
 
+    private readonly ShellLinkComObject _comObject;
     private readonly IPersistFile _persistFile;
     private readonly IShellLinkW _shellLink;
 
@@ -39,24 +37,28 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
     public ShellLinkHelper()
     {
-        this._shellLink = (IShellLinkW)new ShellLink();
-        this._persistFile = (IPersistFile)this._shellLink;
+        this._comObject = ShellLinkComObject.Create();
+        this._shellLink = this._comObject.ShellLink;
+        this._persistFile = this._comObject.PersistFile;
     }
 
     public void Dispose()
     {
-        Marshal.ReleaseComObject(this._shellLink);
+        this._comObject.Dispose();
     }
 
-    public string RetrieveTargetPath(string path)
+    public unsafe string RetrieveTargetPath(string path)
     {
         this.LoadTargetPath(path);
 
-        // Read description via Span overload
         Span<char> descBuf = stackalloc char[MAX_PATH];
         try
         {
-            this._shellLink.GetDescription(descBuf);
+            fixed (char* description = descBuf)
+            {
+                Marshal.ThrowExceptionForHR(this._shellLink.GetDescription(description, descBuf.Length));
+            }
+
             var term = descBuf.IndexOf('\0');
             if (term < 0)
             {
@@ -70,11 +72,14 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
             this.Description = string.Empty;
         }
 
-        // Read arguments via Span overload
         Span<char> argBuf = stackalloc char[MAX_PATH];
         try
         {
-            this._shellLink.GetArguments(argBuf);
+            fixed (char* arguments = argBuf)
+            {
+                Marshal.ThrowExceptionForHR(this._shellLink.GetArguments(arguments, argBuf.Length));
+            }
+
             var term = argBuf.IndexOf('\0');
             if (term < 0)
             {
@@ -90,11 +95,16 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
             this.HasArguments = false;
         }
 
-        // get icon
         Span<char> iconLocationBuffer = stackalloc char[MAX_PATH];
         try
         {
-            this._shellLink.GetIconLocation(iconLocationBuffer, out var iconIndex);
+            int iconIndex;
+            fixed (char* iconLocation = iconLocationBuffer)
+            {
+                Marshal.ThrowExceptionForHR(
+                    this._shellLink.GetIconLocation(iconLocation, iconLocationBuffer.Length, &iconIndex));
+            }
+
             var term = iconLocationBuffer.IndexOf('\0');
             if (term < 0)
             {
@@ -168,15 +178,17 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         return this.TargetPath;
     }
 
-    internal string LoadTargetPath(string path)
+    internal unsafe string LoadTargetPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
             throw new FileNotFoundException("Shortcut file not found.", path);
         }
 
-        // Load the .lnk file
-        this._persistFile.Load(path, (int)STGM.STGM_READ);
+        fixed (char* shortcutPath = path)
+        {
+            Marshal.ThrowExceptionForHR(this._persistFile.Load(shortcutPath, 0));
+        }
 
         // Comment for now, it's too slow; possibly revisit later when the list is updated on background
         //// Resolve without UI
@@ -189,10 +201,13 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         //    Logger.LogError(ex);
         //}
 
-        // Retrieve target via GetPath using Span overload
-        var data = new WIN32_FIND_DATAW();
         Span<char> buffer = stackalloc char[MAX_PATH];
-        this._shellLink.GetPath(buffer, ref data, (int)SLGP_FLAGS.SLGP_RAWPATH);
+        fixed (char* targetPath = buffer)
+        {
+            Marshal.ThrowExceptionForHR(
+                this._shellLink.GetPath(targetPath, buffer.Length, 0, (uint)SLGP_FLAGS.SLGP_RAWPATH));
+        }
+
         var term = buffer.IndexOf('\0');
         if (term < 0)
         {
@@ -223,13 +238,18 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
     private static unsafe string GetLinkTargetDisplayName(IShellLinkW link)
     {
-        ITEMIDLIST* ppidl = null;
+        nint itemIdList = 0;
         PWSTR pwsz = default;
 
         try
         {
-            link.GetIDList(out ppidl);
-            SHGetNameFromIDList(*ppidl, SIGDN.SIGDN_NORMALDISPLAY, out pwsz)
+            Marshal.ThrowExceptionForHR(link.GetIDList(&itemIdList));
+            if (itemIdList == 0)
+            {
+                throw new InvalidOperationException("The shortcut has no target item ID list.");
+            }
+
+            SHGetNameFromIDList(*(ITEMIDLIST*)itemIdList, SIGDN.SIGDN_NORMALDISPLAY, out pwsz)
                 .ThrowOnFailure();
 
             return new string(pwsz.AsSpan());
@@ -241,9 +261,9 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
                 Marshal.FreeCoTaskMem((IntPtr)pwsz.Value);
             }
 
-            if (ppidl != null)
+            if (itemIdList != 0)
             {
-                Marshal.FreeCoTaskMem((IntPtr)ppidl);
+                Marshal.FreeCoTaskMem(itemIdList);
             }
         }
     }

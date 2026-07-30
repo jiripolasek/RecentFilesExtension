@@ -7,7 +7,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AppxManifest>$(ProjectDir)Package.appxmanifest</AppxManifest>
 
-	<WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
     <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
@@ -83,9 +83,21 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)' != 'DEBUG' ">
-    <PublishTrimmed>false</PublishTrimmed>
-    <PublishSingleFile>true</PublishSingleFile>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- PublishAot must be present during restore so the Native AOT toolchain is restored. -->
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <SelfContained>true</SelfContained>
+
+    <!--
+      Serilog 4.3.0 raises IL2067 in its generic object-destructuring path. The toolkit
+      logger used here accepts only preformatted strings and exceptions, so that path
+      is not used. Keep detailed warnings enabled so every other trim warning remains visible.
+    -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <NoWarn>$(NoWarn);IL2067</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -94,9 +106,9 @@
     <!-- Suppress DynamicallyAccessedMemberTypes.PublicParameterlessConstructor in fallback code path of Windows SDK projection -->
     <WarningsNotAsErrors>IL2081</WarningsNotAsErrors>
 
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <ImplicitUsings>enable</ImplicitUsings>
-    
+
     <IsAotCompatible>true</IsAotCompatible>
 
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
@@ -117,11 +129,11 @@
   </Target>
 
   <Target Name="KillRunningExecutable" BeforeTargets="Build;Deploy;Publish">
-	  <PropertyGroup>
-		  <ExecutableName>$(AssemblyName).exe</ExecutableName>
-	  </PropertyGroup>
+      <PropertyGroup>
+          <ExecutableName>$(AssemblyName).exe</ExecutableName>
+      </PropertyGroup>
 
-	  <Exec Command="taskkill /F /IM $(ExecutableName)" ContinueOnError="true" IgnoreExitCode="true" />
+      <Exec Command="taskkill /F /IM $(ExecutableName)" ContinueOnError="true" IgnoreExitCode="true" />
   </Target>
 
 </Project>
