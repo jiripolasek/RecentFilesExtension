@@ -274,8 +274,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         var fileInfoResult = SHGetFileInfo(
             fileOrExtension,
             0,
-            &fileInfo,
-            (uint)sizeof(SHFILEINFOW),
+            ref fileInfo,
             SHGFI_FLAGS.SHGFI_ICONLOCATION);
 
         if (fileInfoResult == nuint.Zero)

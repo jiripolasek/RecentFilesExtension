@@ -1,0 +1,25 @@
+<Project>
+  <PropertyGroup>
+    <CmdPalPackagingTemplateVersion>5</CmdPalPackagingTemplateVersion>
+    <CmdPalRepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</CmdPalRepositoryRoot>
+
+    <CmdPalExtensionProject>$(CmdPalRepositoryRoot)src\JPSoftworks.RecentFilesExtension\JPSoftworks.RecentFilesExtension.csproj</CmdPalExtensionProject>
+    <CmdPalExtensionProjectReference>..\JPSoftworks.RecentFilesExtension\JPSoftworks.RecentFilesExtension.csproj</CmdPalExtensionProjectReference>
+    <CmdPalExtensionAssemblyName>JPSoftworks.RecentFilesExtension</CmdPalExtensionAssemblyName>
+
+    <CmdPalPackageProject>$(CmdPalRepositoryRoot)src\JPSoftworks.RecentFilesExtension.Package\JPSoftworks.RecentFilesExtension.Package.wapproj</CmdPalPackageProject>
+    <CmdPalPackageManifest>$(CmdPalRepositoryRoot)src\JPSoftworks.RecentFilesExtension.Package\Package.appxmanifest</CmdPalPackageManifest>
+    <CmdPalPackageExecutable>JPSoftworks.RecentFilesExtension\JPSoftworks.RecentFilesExtension.exe</CmdPalPackageExecutable>
+    <CmdPalPackageProjectGuid>87772a2c-b322-4ef1-8c21-609ebd0f825c</CmdPalPackageProjectGuid>
+
+    <CmdPalTargetFramework>net10.0-windows10.0.22621.0</CmdPalTargetFramework>
+    <CmdPalTargetPlatformVersion>10.0.22621.0</CmdPalTargetPlatformVersion>
+    <CmdPalTargetPlatformMinVersion>10.0.19041.0</CmdPalTargetPlatformMinVersion>
+    <CmdPalRuntimeIdentifiers>win-x64;win-arm64</CmdPalRuntimeIdentifiers>
+    <CmdPalDefaultLanguage>en-US</CmdPalDefaultLanguage>
+
+    <CmdPalArtifactsPath>$(CmdPalRepositoryRoot)artifacts\</CmdPalArtifactsPath>
+    <CmdPalSupportsNativeAot>true</CmdPalSupportsNativeAot>
+    <CmdPalWindowsSdkBuildToolsVersion>10.0.22621.2428</CmdPalWindowsSdkBuildToolsVersion>
+  </PropertyGroup>
+</Project>
