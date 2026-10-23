@@ -30,15 +30,53 @@ internal sealed partial class RecentFileListItem : ListItem
         List<IContextItem> moreCommands = [];
         if (!string.IsNullOrWhiteSpace(recentFile.TargetPath))
         {
-            moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! }) { RequestedShortcut = KeyChords.OpenInExplorer });
-            moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
+            if (recentFile.IsFileSystemPath)
+            {
+                moreCommands.Add(new CommandContextItem(new ShowFileInFolderCommand(recentFile.TargetPath) { Name = Strings.Command_ShowInFolder! }) { RequestedShortcut = KeyChords.OpenInExplorer });
+                moreCommands.Add(new CommandContextItem(new OpenWithCommand(recentFile)));
+            }
+
             moreCommands.Add(new CommandContextItem(new JPCommands.CopyPathCommand(recentFile)) { RequestedShortcut = KeyChords.CopyPath });
         }
         this.MoreCommands = [.. moreCommands];
 
-        _ = Task.Run(
-            () => this.LoadIconAsync(recentFile, cancellationToken),
-            CancellationToken.None);
+        if (!recentFile.IsFileSystemPath && recentFile.IsDirectory())
+        {
+            this.Icon = Icons.FolderOpen;
+        }
+        else if (TryGetDirectBinaryIconPath(recentFile, out var directIconPath))
+        {
+            // Let CmdPal extract executable icons in-process. This avoids handing an
+            // asynchronously-created WinRT stream across the extension boundary.
+            this.Icon = new IconInfo(directIconPath);
+        }
+        else
+        {
+            _ = Task.Run(
+                () => this.LoadIconAsync(recentFile, cancellationToken),
+                CancellationToken.None);
+        }
+    }
+
+    internal static bool TryGetDirectBinaryIconPath(IRecentFile recentFile, out string iconPath)
+    {
+        iconPath = string.Empty;
+        if (recentFile.IsFileSystemPath ||
+            string.IsNullOrWhiteSpace(recentFile.IconPath) ||
+            !File.Exists(recentFile.IconPath))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(recentFile.IconPath);
+        if (!extension.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // CmdPal's binary-icon parser recognizes lower-case executable extensions.
+        iconPath = Path.ChangeExtension(recentFile.IconPath, extension.ToLowerInvariant());
+        return true;
     }
 
     private async Task LoadIconAsync(IRecentFile recentFile, CancellationToken cancellationToken)
@@ -81,10 +119,12 @@ internal sealed partial class RecentFileListItem : ListItem
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Try target path first if it exists and is not a network path
-        if (!string.IsNullOrWhiteSpace(recentShortcutFile.TargetPath) && !recentShortcutFile.TargetPath.IsNetworkPath())
+        // Cloud Office entries use the Office executable as their icon source.
+        if (!string.IsNullOrWhiteSpace(recentShortcutFile.IconPath) &&
+            RecentFilePath.IsFileSystemPath(recentShortcutFile.IconPath) &&
+            !recentShortcutFile.IconPath.IsNetworkPath())
         {
-            var icon = await TryGetThumbnailIconAsync(recentShortcutFile.TargetPath).ConfigureAwait(false);
+            var icon = await TryGetThumbnailIconAsync(recentShortcutFile.IconPath).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (icon != null)
@@ -94,7 +134,7 @@ internal sealed partial class RecentFileListItem : ListItem
         cancellationToken.ThrowIfCancellationRequested();
 
         // Fall back to full path if it's not a network path
-        if (!recentShortcutFile.FullPath.IsNetworkPath())
+        if (recentShortcutFile.IsFileSystemPath && !recentShortcutFile.FullPath.IsNetworkPath())
         {
             var icon = await TryGetThumbnailIconAsync(recentShortcutFile.FullPath).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();

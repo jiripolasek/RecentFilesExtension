@@ -25,14 +25,16 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private bool _sourceChanged = true;
     private bool _isDisposed;
 
-    public RecentFilesExtensionPage()
+    public RecentFilesExtensionPage(IRecentFilesSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+
         this.Icon = Icons.MainIcon;
         this.Title = Strings.Page_RecentFiles!;
         this.Name = Strings.Page_RecentFiles!;
         this.Id = "com.jpsoftworks.cmdpal.recentfiles";
 
-        this._recentFilesProvider = new RecentFilesProvider();
+        this._recentFilesProvider = new RecentFilesProvider(settings);
         this._loader = new RecentFilesLoader(this._recentFilesProvider);
         this._loader.SourceChanged += this.OnSourceChanged;
         this._loader.InitializationComplete += this.OnSourceInitialized;

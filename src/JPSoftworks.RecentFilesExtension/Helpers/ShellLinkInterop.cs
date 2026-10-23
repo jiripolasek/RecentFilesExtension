@@ -18,17 +18,21 @@ internal sealed partial class ShellLinkComObject : IDisposable
         object comObject,
         IShellLinkW shellLink,
         IPersistFile persistFile,
+        IPersistStream persistStream,
         bool uninitializeCom)
     {
         this._comObject = comObject;
         this.ShellLink = shellLink;
         this.PersistFile = persistFile;
+        this.PersistStream = persistStream;
         this._uninitializeCom = uninitializeCom;
     }
 
     internal IShellLinkW ShellLink { get; }
 
     internal IPersistFile PersistFile { get; }
+
+    internal IPersistStream PersistStream { get; }
 
     internal static ShellLinkComObject Create()
     {
@@ -57,6 +61,7 @@ internal sealed partial class ShellLinkComObject : IDisposable
                     shellLink,
                     shellLink,
                     (IPersistFile)shellLink,
+                    (IPersistStream)shellLink,
                     uninitializeCom);
             }
             catch
@@ -221,4 +226,22 @@ internal unsafe partial interface IPersistFile : IPersist
 
     [PreserveSig]
     int GetCurrentFile(char** fileName);
+}
+
+[GeneratedComInterface]
+[Guid("00000109-0000-0000-C000-000000000046")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal unsafe partial interface IPersistStream : IPersist
+{
+    [PreserveSig]
+    int IsDirty();
+
+    [PreserveSig]
+    int Load(nint stream);
+
+    [PreserveSig]
+    int Save(nint stream, int clearDirty);
+
+    [PreserveSig]
+    int GetSizeMax(ulong* size);
 }

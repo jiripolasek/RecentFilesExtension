@@ -19,8 +19,9 @@ internal sealed partial class OpenFileCommand : InvokableCommand
     internal OpenFileCommand(IRecentFile item)
     {
         this._item = item;
-        this.Name = item.IsDirectory() ? Strings.Command_OpenFolder! : Strings.Command_OpenFile!;
-        this.Icon = Icons.OpenFile;
+        var isDirectory = item.IsDirectory();
+        this.Name = isDirectory ? Strings.Command_OpenFolder! : Strings.Command_OpenFile!;
+        this.Icon = isDirectory ? Icons.FolderOpen : Icons.OpenFile;
     }
 
     public override CommandResult Invoke()

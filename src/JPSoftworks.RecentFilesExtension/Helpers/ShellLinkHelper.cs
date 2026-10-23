@@ -5,6 +5,7 @@
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.Shell;
@@ -25,6 +26,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
     private readonly ShellLinkComObject _comObject;
     private readonly IPersistFile _persistFile;
+    private readonly IPersistStream _persistStream;
     private readonly IShellLinkW _shellLink;
 
     public string Description { get; private set; } = string.Empty;
@@ -40,6 +42,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         this._comObject = ShellLinkComObject.Create();
         this._shellLink = this._comObject.ShellLink;
         this._persistFile = this._comObject.PersistFile;
+        this._persistStream = this._comObject.PersistStream;
     }
 
     public void Dispose()
@@ -125,42 +128,42 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
                 else
 
                     // Icon path is invalid, get the default icon for the target file type
-                if (!string.IsNullOrEmpty(this.TargetPath) && File.Exists(this.TargetPath))
-                {
-                    // Get the default icon for the target file
-                    var extension = Path.GetExtension(this.TargetPath);
-                    if (!string.IsNullOrEmpty(extension))
+                    if (!string.IsNullOrEmpty(this.TargetPath) && File.Exists(this.TargetPath))
                     {
-                        // Use SHGetFileInfo to get the default icon path
-                        var tempExtIcon = GetFileIconLocation(extension);
-                        if (!string.IsNullOrEmpty(tempExtIcon.IconPath))
+                        // Get the default icon for the target file
+                        var extension = Path.GetExtension(this.TargetPath);
+                        if (!string.IsNullOrEmpty(extension))
                         {
-                            this.IconPath = tempExtIcon.IconPath;
-                            this.IconIndex = tempExtIcon.IconIndex;
+                            // Use SHGetFileInfo to get the default icon path
+                            var tempExtIcon = GetFileIconLocation(extension);
+                            if (!string.IsNullOrEmpty(tempExtIcon.IconPath))
+                            {
+                                this.IconPath = tempExtIcon.IconPath;
+                                this.IconIndex = tempExtIcon.IconIndex;
+                            }
+                            else
+                            {
+                                // If extension icon not found, get icon for the file specifically
+                                var tempFileIcon = GetFileIconLocation(this.TargetPath);
+                                this.IconPath = tempFileIcon.IconPath;
+                                this.IconIndex = tempFileIcon.IconIndex;
+                            }
                         }
                         else
                         {
-                            // If extension icon not found, get icon for the file specifically
-                            var tempFileIcon = GetFileIconLocation(this.TargetPath);
-                            this.IconPath = tempFileIcon.IconPath;
-                            this.IconIndex = tempFileIcon.IconIndex;
+                            // Direct file icon lookup if no extension
+                            var tempIcon = GetFileIconLocation(this.TargetPath);
+                            this.IconPath = tempIcon.IconPath;
+                            this.IconIndex = tempIcon.IconIndex;
                         }
                     }
                     else
                     {
-                        // Direct file icon lookup if no extension
-                        var tempIcon = GetFileIconLocation(this.TargetPath);
-                        this.IconPath = tempIcon.IconPath;
-                        this.IconIndex = tempIcon.IconIndex;
+                        // Default to shell32.dll if target path is invalid too
+                        this.IconPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+                            "shell32.dll");
+                        this.IconIndex = 0; // Default icon
                     }
-                }
-                else
-                {
-                    // Default to shell32.dll if target path is invalid too
-                    this.IconPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                        "shell32.dll");
-                    this.IconIndex = 0; // Default icon
-                }
             }
             else
             {
@@ -216,6 +219,60 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
         this.TargetPath = new string(buffer[..term]);
         return this.TargetPath;
+    }
+
+    internal unsafe ShellLinkTargetData LoadTargetData(IStructuredStorageStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var streamPointer = ComInterfaceMarshaller<IStructuredStorageStream>.ConvertToUnmanaged(stream);
+        try
+        {
+            Marshal.ThrowExceptionForHR(this._persistStream.Load((nint)streamPointer));
+        }
+        finally
+        {
+            ComInterfaceMarshaller<IStructuredStorageStream>.Free(streamPointer);
+        }
+
+        const int bufferLength = 32768;
+        var targetPathBuffer = new char[bufferLength];
+        var argumentsBuffer = new char[bufferLength];
+        var descriptionBuffer = new char[bufferLength];
+        fixed (char* targetPath = targetPathBuffer)
+        fixed (char* arguments = argumentsBuffer)
+        fixed (char* description = descriptionBuffer)
+        {
+            if (this._shellLink.GetPath(
+                    targetPath,
+                    targetPathBuffer.Length,
+                    0,
+                    (uint)SLGP_FLAGS.SLGP_RAWPATH) < 0)
+            {
+                targetPathBuffer.AsSpan().Clear();
+            }
+
+            if (this._shellLink.GetArguments(arguments, argumentsBuffer.Length) < 0)
+            {
+                argumentsBuffer.AsSpan().Clear();
+            }
+
+            if (this._shellLink.GetDescription(description, descriptionBuffer.Length) < 0)
+            {
+                descriptionBuffer.AsSpan().Clear();
+            }
+        }
+
+        return new(
+            ReadNullTerminatedString(targetPathBuffer),
+            ReadNullTerminatedString(argumentsBuffer),
+            ReadNullTerminatedString(descriptionBuffer));
+    }
+
+    private static string ReadNullTerminatedString(ReadOnlySpan<char> value)
+    {
+        var terminator = value.IndexOf('\0');
+        return new(terminator < 0 ? value : value[..terminator]);
     }
 
     internal string RetrieveDisplayName(string path)
@@ -338,3 +395,8 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         SLR_INVOKE_MSI = 0x80
     }
 }
+
+internal readonly record struct ShellLinkTargetData(
+    string TargetPath,
+    string Arguments,
+    string Description);

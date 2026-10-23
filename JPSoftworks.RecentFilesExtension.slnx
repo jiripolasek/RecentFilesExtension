@@ -14,6 +14,10 @@
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="tests/JPSoftworks.RecentFilesExtension.UnitTests/JPSoftworks.RecentFilesExtension.UnitTests.csproj">
+    <Platform Solution="*|ARM64" Project="ARM64" />
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
   <Project Path="src/JPSoftworks.RecentFilesExtension.Package/JPSoftworks.RecentFilesExtension.Package.wapproj" Type="c7167f0d-bc9f-4e6e-afe1-012c56b48db5">
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />

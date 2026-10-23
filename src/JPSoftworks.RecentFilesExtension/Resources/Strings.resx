@@ -138,6 +138,21 @@
   <data name="Page_RecentFiles_Subtitle" xml:space="preserve">
     <value>Lists recently used or accessed files or folders</value>
   </data>
+  <data name="Settings_Group_Sources" xml:space="preserve">
+    <value>Recent file sources</value>
+  </data>
+  <data name="Settings_OpenSaveMru_Title" xml:space="preserve">
+    <value>Windows open and save dialogs</value>
+  </data>
+  <data name="Settings_OpenSaveMru_Subtitle" xml:space="preserve">
+    <value>Include files used in standard Windows open and save dialogs.</value>
+  </data>
+  <data name="Settings_OfficeRecentFiles_Title" xml:space="preserve">
+    <value>Microsoft Office</value>
+  </data>
+  <data name="Settings_OfficeRecentFiles_Subtitle" xml:space="preserve">
+    <value>Include recent files from installed Office versions and all Office accounts.</value>
+  </data>
   <data name="UserExperienceHelper_CmdPalIsInstalledButFailedToStart" xml:space="preserve">
 	  <value>PowerToys Command Palette is installed, but failed to start.
 

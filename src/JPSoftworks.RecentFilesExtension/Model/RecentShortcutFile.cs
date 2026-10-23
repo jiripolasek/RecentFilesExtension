@@ -14,7 +14,13 @@ internal sealed class RecentShortcutFile : IRecentFile
 
     public string TargetPath { get; init; }
 
+    public string? IconPath => this.TargetPath;
+
     public FileInfo FileInfo { get; init; }
+
+    public DateTimeOffset LastUsedTimeUtc => new(this.FileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+
+    public bool IsFileSystemPath => true;
 
     internal RecentShortcutFile(FileInfo fileInfo, string displayName, string targetPath)
     {

@@ -7,18 +7,14 @@
 using System.Diagnostics;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
+using JPSoftworks.RecentFilesExtension.Sources;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
-internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
+internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 {
     private static readonly TimeSpan RefreshDebounceInterval = TimeSpan.FromMilliseconds(500);
-    private const int MaxRecentFileCount = 500;
-    private const string ShortcutFileSearchPattern = "*.lnk";
-
-    private readonly CachedShellLinksHelper _shellLinksHelper = new();
-    private readonly FileSystemWatcher? _fileSystemWatcher;
-    private readonly string _recentFilesFolderPath;
+    private readonly IRecentFileSource _source;
     private bool _first = true;
 
     // cache + sync
@@ -43,26 +39,19 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
     /// </summary>
     public event EventHandler? InitialLoadComplete;
 
-    internal RecentFilesProvider()
+    internal RecentFilesProvider(IRecentFilesSettings settings)
+        : this(new CompositeRecentFileSource(settings))
     {
+    }
+
+    internal RecentFilesProvider(IRecentFileSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        this._source = source;
         this._cancellationToken = this._cancellationTokenSource.Token;
-        this._recentFilesFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
-
-        if (!string.IsNullOrWhiteSpace(this._recentFilesFolderPath))
-        {
-            this._fileSystemWatcher = new(this._recentFilesFolderPath, ShortcutFileSearchPattern)
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                IncludeSubdirectories = false,
-                EnableRaisingEvents = true
-            };
-            this._fileSystemWatcher.Created += this.OnFsEvent;
-            this._fileSystemWatcher.Deleted += this.OnFsEvent;
-            this._fileSystemWatcher.Renamed += this.OnFsEvent;
-            this._fileSystemWatcher.Changed += this.OnFsEvent;
-
-            this._reloadTimer.Elapsed += (_, _) => this.RefreshCache();
-        }
+        this._source.Changed += this.OnSourceChanged;
+        this._reloadTimer.Elapsed += (_, _) => this.RefreshCache();
 
         // Start initial cache loading on background thread
         _ = Task.Run(this.InitialCacheLoadAsync, this._cancellationToken);
@@ -187,7 +176,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
         }
     }
 
-    private void OnFsEvent(object sender, FileSystemEventArgs e)
+    private void OnSourceChanged(object? sender, EventArgs e)
     {
         lock (this._lifecycleLock)
         {
@@ -196,7 +185,6 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
                 return;
             }
 
-            Logger.LogDebug($"File system event: {e.ChangeType} {e.Name} | {e.FullPath}");
             this.RestartReloadTimer();
         }
     }
@@ -213,7 +201,7 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             List<IRecentFile> newList;
             try
             {
-                newList = this.LoadRecentFilesFromDisk();
+                newList = [.. this._source.GetRecentFiles(this._cancellationToken)];
             }
             catch (Exception ex)
             {
@@ -301,76 +289,15 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
             if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
                 !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
-                !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath))
+                !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
+                !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
+                firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
             {
                 return false;
             }
         }
 
         return true;
-    }
-
-    private List<IRecentFile> LoadRecentFilesFromDisk()
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        var recentFilesShortcuts = new DirectoryInfo(this._recentFilesFolderPath)
-            .GetFiles(ShortcutFileSearchPattern, SearchOption.TopDirectoryOnly)
-            .OrderByDescending(static t => t.LastWriteTimeUtc)
-            .ToArray();
-
-        Logger.LogDebug($"Refresh 10 | Found {recentFilesShortcuts.Length} recent files shortcuts in {this._recentFilesFolderPath} in {stopwatch.ElapsedMilliseconds}ms");
-
-        var items = new List<IRecentFile>();
-        var addedTargetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var counter = 0;
-
-        foreach (var fileInfo in recentFilesShortcuts)
-        {
-            if (counter >= MaxRecentFileCount)
-                break;
-
-            if (this._cancellationToken.IsCancellationRequested)
-                break;
-
-            try
-            {
-                if (!this._shellLinksHelper.TryGetShellLink(fileInfo, out var shortcutFile))
-                    continue;
-
-                // avoid duplicates
-                var isNetwork = shortcutFile.TargetPath.IsNetworkPath();
-                var key = isNetwork ? shortcutFile.TargetPath : shortcutFile.TargetPath.ToLowerInvariant();
-                if (!addedTargetPaths.Add(key))
-                    continue;
-
-                // drop parent-folder entries if immediately followed by a file in that folder
-                if (items.Count > 0 && items[^1].TargetPath.Equals(Path.GetDirectoryName(shortcutFile.TargetPath), StringComparison.OrdinalIgnoreCase))
-                {
-                    counter--;
-                    items.RemoveAt(items.Count - 1);
-                }
-
-                // skip if it's the same as last
-                if (items.Count > 0 && items[^1].TargetPath.Equals(shortcutFile.TargetPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                items.Add(shortcutFile);
-                counter++;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"Failed to process shortcut {fileInfo.FullName}", ex);
-            }
-        }
-
-        Logger.LogDebug($"Refresh 20 | Loaded {items.Count} recent files in {stopwatch.ElapsedMilliseconds}ms");
-
-        stopwatch.Stop();
-
-        return items;
     }
 
     public void Dispose()
@@ -386,7 +313,8 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             this._cancellationTokenSource.Cancel();
         }
 
-        this._fileSystemWatcher?.Dispose();
+        this._source.Changed -= this.OnSourceChanged;
+        this._source.Dispose();
         this._reloadTimer.Dispose();
         this._cancellationTokenSource.Dispose();
     }

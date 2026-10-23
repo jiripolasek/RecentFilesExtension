@@ -14,5 +14,11 @@ internal interface IRecentFile
 
     public string FullPath { get; }
 
+    public string? IconPath { get; }
+
+    public DateTimeOffset LastUsedTimeUtc { get; }
+
+    public bool IsFileSystemPath { get; }
+
     public bool IsDirectory();
 }

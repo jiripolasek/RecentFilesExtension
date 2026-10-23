@@ -14,6 +14,7 @@ public sealed partial class RecentFilesExtension : IExtension, IDisposable
     private readonly ManualResetEvent _extensionDisposedEvent;
 
     private readonly RecentFilesExtensionCommandsProvider _provider = new();
+    private bool _isDisposed;
 
     public RecentFilesExtension(ManualResetEvent extensionDisposedEvent)
     {
@@ -31,6 +32,13 @@ public sealed partial class RecentFilesExtension : IExtension, IDisposable
 
     public void Dispose()
     {
+        if (this._isDisposed)
+        {
+            return;
+        }
+
+        this._isDisposed = true;
+        this._provider.Dispose();
         this._extensionDisposedEvent.Set();
     }
 }
