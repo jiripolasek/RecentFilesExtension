@@ -65,7 +65,7 @@ internal class CachedShellLinksHelper
         try
         {
             var displayName = shellLink.RetrieveDisplayName(shortcutFileInfo.FullName);
-            shortcutFile = new(shortcutFileInfo, displayName, target);
+            shortcutFile = new(shortcutFileInfo, displayName, target, shellLink.IsDirectory);
             this._cache[shortcutFileInfo.FullName] = shortcutFile;
             return true;
         }

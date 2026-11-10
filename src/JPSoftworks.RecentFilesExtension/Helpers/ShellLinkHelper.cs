@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.Shell.Common;
 using static Windows.Win32.PInvoke;
@@ -36,6 +37,7 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
     public string DisplayName { get; private set; } = string.Empty;
     public string? IconPath { get; private set; }
     public int IconIndex { get; private set; } = -1;
+    internal bool IsDirectory { get; private set; }
 
     public ShellLinkHelper()
     {
@@ -205,11 +207,14 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         //}
 
         Span<char> buffer = stackalloc char[MAX_PATH];
+        WIN32_FIND_DATAW findData = default;
         fixed (char* targetPath = buffer)
         {
             Marshal.ThrowExceptionForHR(
-                this._shellLink.GetPath(targetPath, buffer.Length, 0, (uint)SLGP_FLAGS.SLGP_RAWPATH));
+                this._shellLink.GetPath(targetPath, buffer.Length, (nint)(&findData), (uint)SLGP_FLAGS.SLGP_RAWPATH));
         }
+
+        this.IsDirectory = (findData.dwFileAttributes & (uint)FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_DIRECTORY) != 0;
 
         var term = buffer.IndexOf('\0');
         if (term < 0)

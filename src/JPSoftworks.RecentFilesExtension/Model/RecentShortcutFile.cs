@@ -8,6 +8,8 @@ namespace JPSoftworks.RecentFilesExtension.Model;
 
 internal sealed class RecentShortcutFile : IRecentFile
 {
+    private readonly bool _isDirectory;
+
     public string FullPath { get; init; }
 
     public string DisplayName { get; init; }
@@ -22,16 +24,17 @@ internal sealed class RecentShortcutFile : IRecentFile
 
     public bool IsFileSystemPath => true;
 
-    internal RecentShortcutFile(FileInfo fileInfo, string displayName, string targetPath)
+    internal RecentShortcutFile(FileInfo fileInfo, string displayName, string targetPath, bool isDirectory)
     {
         this.FileInfo = fileInfo;
         this.FullPath = fileInfo.FullName;
         this.DisplayName = displayName;
         this.TargetPath = targetPath;
+        this._isDirectory = isDirectory;
     }
 
     public bool IsDirectory()
     {
-        return Directory.Exists(this.TargetPath);
+        return this._isDirectory;
     }
 }

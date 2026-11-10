@@ -11,6 +11,8 @@ namespace JPSoftworks.RecentFilesExtension.Model;
 /// </summary>
 internal sealed class RecentPathFile : IRecentFile
 {
+    private readonly bool _isDirectory;
+
     public RecentPathFile(
         string targetPath,
         DateTimeOffset lastUsedTimeUtc,
@@ -28,6 +30,7 @@ internal sealed class RecentPathFile : IRecentFile
         this.DisplayName = RecentFilePath.GetDisplayName(normalizedPath);
         this.LastUsedTimeUtc = lastUsedTimeUtc.ToUniversalTime();
         this.IsFileSystemPath = RecentFilePath.IsFileSystemPath(normalizedPath);
+        this._isDirectory = RecentFilePath.IsDirectory(normalizedPath);
         this.FullPath = string.IsNullOrWhiteSpace(launchPath) ? normalizedPath : launchPath;
         this.IconPath = string.IsNullOrWhiteSpace(iconPath)
             ? this.IsFileSystemPath ? normalizedPath : null
@@ -48,8 +51,6 @@ internal sealed class RecentPathFile : IRecentFile
 
     public bool IsDirectory()
     {
-        return this.IsFileSystemPath
-            ? Directory.Exists(this.TargetPath)
-            : RecentFilePath.IsSharePointFolder(this.TargetPath);
+        return this._isDirectory;
     }
 }

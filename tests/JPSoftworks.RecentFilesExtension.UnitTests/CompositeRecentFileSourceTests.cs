@@ -108,7 +108,7 @@ public sealed class CompositeRecentFileSourceTests
     [TestMethod]
     public void SettingsChangeReevaluatesEnabledSourcesAndRaisesChanged()
     {
-        var settings = new StubSettings { IncludeOfficeRecentFiles = true };
+        var settings = new TestRecentFilesSettings { IncludeOfficeRecentFiles = true };
         using var source = new StubSource(new RecentPathFile(
             @"C:\Documents\Office.docx",
             DateTimeOffset.UtcNow));
@@ -145,20 +145,6 @@ public sealed class CompositeRecentFileSourceTests
 
         public void Dispose()
         {
-        }
-    }
-
-    private sealed class StubSettings : Helpers.IRecentFilesSettings
-    {
-        public event EventHandler? SourcesChanged;
-
-        public bool IncludeOpenSaveMru { get; set; }
-
-        public bool IncludeOfficeRecentFiles { get; set; }
-
-        public void RaiseSourcesChanged()
-        {
-            this.SourcesChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

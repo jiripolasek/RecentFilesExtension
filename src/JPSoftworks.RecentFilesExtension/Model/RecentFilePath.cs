@@ -4,6 +4,8 @@
 //
 // ------------------------------------------------------------
 
+using JPSoftworks.RecentFilesExtension.Helpers;
+
 namespace JPSoftworks.RecentFilesExtension.Model;
 
 internal static class RecentFilePath
@@ -54,6 +56,17 @@ internal static class RecentFilePath
                 uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
                IsSharePointHost(uri.Host) &&
                uri.AbsolutePath.EndsWith('/');
+    }
+
+    public static bool IsDirectory(string path)
+    {
+        if (!IsFileSystemPath(path))
+        {
+            return IsSharePointFolder(path);
+        }
+
+        // shortcut: path-only network MRUs lack folder metadata; use saved source metadata if folder classification is needed.
+        return !path.IsNetworkPath() && Directory.Exists(path);
     }
 
     public static string GetDeduplicationKey(string path)

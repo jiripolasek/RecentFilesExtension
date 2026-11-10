@@ -291,6 +291,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
                 !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
                 !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
                 !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
+                firstItem.IsDirectory() != secondItem.IsDirectory() ||
                 firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
             {
                 return false;

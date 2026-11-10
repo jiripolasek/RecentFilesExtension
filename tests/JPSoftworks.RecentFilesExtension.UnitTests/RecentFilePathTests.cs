@@ -4,6 +4,7 @@
 //
 // ------------------------------------------------------------
 
+using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
 
 namespace JPSoftworks.RecentFilesExtension.UnitTests;
@@ -11,6 +12,26 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 [TestClass]
 public sealed class RecentFilePathTests
 {
+    [TestMethod]
+    [DataRow(@"\\server\share\file.txt")]
+    [DataRow(@"\\?\UNC\server\share\file.txt")]
+    [DataRow("//server/share/file.txt")]
+    public void NetworkPathDetectionRecognizesUncPathsWithoutAccessingThem(string path)
+    {
+        Assert.IsTrue(path.IsNetworkPath());
+    }
+
+    [TestMethod]
+    public void ExtendedLocalPathsUseTheLocalDriveType()
+    {
+        var path = Path.GetTempPath();
+        var expected = new DriveInfo(Path.GetPathRoot(path)!).DriveType == DriveType.Network;
+
+        Assert.AreEqual(expected, path.IsNetworkPath());
+        Assert.AreEqual(expected, $@"\\?\{path}".IsNetworkPath());
+        Assert.IsFalse("relative.txt".IsNetworkPath());
+    }
+
     [TestMethod]
     public void GetDeduplicationKeyCanonicalizesSharePointEncodingAndWebFlag()
     {

@@ -10,7 +10,19 @@ internal interface IRecentFilesSettings
 {
     event EventHandler? SourcesChanged;
 
+    event EventHandler? AppearanceChanged;
+
     bool IncludeOpenSaveMru { get; }
 
     bool IncludeOfficeRecentFiles { get; }
+
+    string ViewMode { get; set; }
+
+    bool HideFileExtensions { get; }
+
+    bool ShowFileTypeInSubtitle { get; }
+
+    bool ShowFileTypeTags { get; }
+
+    bool ShowDetails { get; set; }
 }

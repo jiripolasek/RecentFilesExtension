@@ -14,6 +14,8 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private static readonly CommandItem NothingFoundEmptyContent;
     private static readonly CommandItem NothingFoundWithQueryEmptyContent;
 
+    private readonly IRecentFilesSettings _settings;
+    private readonly IContextItem[] _appearanceCommands;
     private readonly IRecentFilesProvider _recentFilesProvider;
     private readonly IRecentFilesLoader _loader;
     private readonly RecentFilesFilters _filters;
@@ -25,7 +27,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private bool _sourceChanged = true;
     private bool _isDisposed;
 
-    public RecentFilesExtensionPage(IRecentFilesSettings settings)
+    public RecentFilesExtensionPage(IRecentFilesSettings settings, IRecentFilesProvider? recentFilesProvider = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -34,7 +36,29 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         this.Name = Strings.Page_RecentFiles!;
         this.Id = "com.jpsoftworks.cmdpal.recentfiles";
 
-        this._recentFilesProvider = new RecentFilesProvider(settings);
+        this._settings = settings;
+        this._appearanceCommands =
+        [
+            new Separator(),
+            new CommandContextItem(new AnonymousCommand(() => this._settings.ViewMode = this._settings.ViewMode switch
+            {
+                "list" => "grid",
+                "grid" => "gallery",
+                _ => "list",
+            })
+            {
+                Name = Strings.Command_ToggleViewMode,
+                Icon = Icons.ToggleViewMode,
+                Result = CommandResult.KeepOpen(),
+            }) { RequestedShortcut = KeyChords.ToggleViewMode },
+            new CommandContextItem(new AnonymousCommand(() => this._settings.ShowDetails = !this._settings.ShowDetails)
+            {
+                Name = Strings.Command_ToggleDetails,
+                Icon = Icons.ToggleDetails,
+                Result = CommandResult.KeepOpen(),
+            }) { RequestedShortcut = KeyChords.ToggleDetails },
+        ];
+        this._recentFilesProvider = recentFilesProvider ?? new RecentFilesProvider(settings);
         this._loader = new RecentFilesLoader(this._recentFilesProvider);
         this._loader.SourceChanged += this.OnSourceChanged;
         this._loader.InitializationComplete += this.OnSourceInitialized;
@@ -50,6 +74,8 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         this._filters.PropChanged += (_, _) => { this.TriggerSearch(this.SearchText); };
         this.Filters = this._filters;
 
+        this._settings.AppearanceChanged += this.OnAppearanceChanged;
+        this.OnAppearanceChanged(this._settings, EventArgs.Empty);
         this.IsLoading = true;
         this.TriggerSearch("");
     }
@@ -70,6 +96,32 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             Subtitle = "Try changing your search query",
             Icon = Icons.BigIcon,
         };
+    }
+
+    private void OnAppearanceChanged(object? sender, EventArgs e)
+    {
+        RecentFileListItem[] items;
+        lock (this._syncRoot)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            items = this._loadedItems.OfType<RecentFileListItem>().ToArray();
+        }
+
+        this.GridProperties = this._settings.ViewMode switch
+        {
+            "grid" => new MediumGridLayout(),
+            "gallery" => new GalleryGridLayout(),
+            _ => null,
+        };
+        this.ShowDetails = this._settings.ShowDetails;
+        foreach (var item in items)
+        {
+            item.ApplyAppearance(this._settings);
+        }
     }
 
     private void OnSourceChanged(object? sender, EventArgs e)
@@ -200,6 +252,12 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
                 cancellationToken = this._searchCancellationTokenSource.Token;
                 var items = this._loader.LoadNextPage(this._searchToken, cancellationToken);
+                foreach (var item in items)
+                {
+                    item.MoreCommands = [.. item.MoreCommands, .. this._appearanceCommands];
+                    item.ApplyAppearance(this._settings);
+                }
+
                 this._loadedItems.AddRange(items);
                 itemCount = this._loadedItems.Count;
                 hasMore = this._loader.HasMore;
@@ -283,6 +341,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             searchCancellationTokenSource = this._searchCancellationTokenSource;
         }
 
+        this._settings.AppearanceChanged -= this.OnAppearanceChanged;
         searchCancellationTokenSource.Cancel();
         searchCancellationTokenSource.Dispose();
         this._loader.SourceChanged -= this.OnSourceChanged;
