@@ -9,8 +9,10 @@ MSBuild, unpacks the generated unsigned MSIX, and registers the unpacked
 development package in Visual Studio's standard AppX output directory while
 preserving application data. Use -Aot to enable Native AOT and trimming;
 otherwise the script publishes a managed, untrimmed development package.
-Repository-specific paths and platform mappings are loaded from
-Package.config.psd1.
+Repository-specific paths and platform mappings are evaluated from
+CmdPal.Extension.props; script defaults come from Package.config.psd1.
+Use -BuildOnly to return the unsigned MSIX as a FileInfo without changing the
+local package registration or stopping the local extension.
 
 .EXAMPLE
 .\eng\Deploy-Package.ps1
@@ -20,6 +22,9 @@ Package.config.psd1.
 
 .EXAMPLE
 .\eng\Deploy-Package.ps1 -Configuration Debug -Platform ARM64 -Aot
+
+.EXAMPLE
+$package = .\eng\Deploy-Package.ps1 -BuildOnly
 #>
 
 [CmdletBinding()]
@@ -37,7 +42,13 @@ param(
     [string] $VisualStudioPath,
 
     [Parameter()]
-    [string] $ConfigPath
+    [switch] $BuildOnly,
+
+    [Parameter()]
+    [string] $ConfigPath,
+
+    [Parameter()]
+    [bool] $WriteBinLog = $true
 )
 
 Set-StrictMode -Version Latest
@@ -52,23 +63,7 @@ if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
     throw "WAP package configuration was not found: '$ConfigPath'."
 }
 
-$packageConfig = Import-PowerShellDataFile -LiteralPath $ConfigPath
-$requiredConfigKeys = @(
-    'RepositoryRoot'
-    'AppProjectPath'
-    'WapProjectPath'
-    'PackageManifestPath'
-    'ArtifactsPath'
-    'PackageExecutablePath'
-    'DefaultConfiguration'
-    'DefaultPlatform'
-    'RuntimeIdentifiers'
-)
-foreach ($requiredConfigKey in $requiredConfigKeys) {
-    if (-not $packageConfig.ContainsKey($requiredConfigKey)) {
-        throw "WAP package configuration '$ConfigPath' is missing '$requiredConfigKey'."
-    }
-}
+$packageConfig = & (Join-Path $PSScriptRoot 'Get-PackageConfig.ps1') -ConfigPath $ConfigPath -Configuration $Configuration -Platform $Platform
 
 if ([string]::IsNullOrWhiteSpace($Configuration)) {
     $Configuration = [string] $packageConfig.DefaultConfiguration
@@ -76,16 +71,12 @@ if ([string]::IsNullOrWhiteSpace($Configuration)) {
 if ([string]::IsNullOrWhiteSpace($Platform)) {
     $Platform = [string] $packageConfig.DefaultPlatform
 }
-if (-not ($packageConfig.RuntimeIdentifiers -is [Collections.IDictionary])) {
-    throw "RuntimeIdentifiers in '$ConfigPath' must be a hashtable."
-}
 if (-not $packageConfig.RuntimeIdentifiers.Contains($Platform)) {
     $supportedPlatforms = @($packageConfig.RuntimeIdentifiers.Keys) -join ', '
     throw "Platform '$Platform' is not configured. Supported platforms: $supportedPlatforms."
 }
 
-$configDirectory = Split-Path -Parent $ConfigPath
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $configDirectory ([string] $packageConfig.RepositoryRoot)))
+$repoRoot = $packageConfig.RepositoryRoot
 
 function Resolve-ConfiguredPath {
     param(
@@ -127,7 +118,7 @@ function Invoke-CheckedCommand {
         & $FilePath @ArgumentList | Out-Null
     }
     else {
-        & $FilePath @ArgumentList
+        & $FilePath @ArgumentList | Out-Host
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -239,7 +230,15 @@ if ([string]::IsNullOrWhiteSpace($configuredPackageIdentityName)) {
 
 $visualStudioInstallation = Find-VisualStudioInstallation
 $msbuildPath = Join-Path $visualStudioInstallation 'MSBuild\Current\Bin\MSBuild.exe'
-$makeAppxPath = Find-MakeAppx
+if ($WriteBinLog) {
+    $buildLogDirectory = Join-Path $artifactsPath 'logs'
+    New-Item -ItemType Directory -Path $buildLogDirectory -Force | Out-Null
+    Write-Host "Writing MSBuild logs to $buildLogDirectory"
+}
+if ($BuildOnly) {
+    $artifactsPath = Join-Path $artifactsPath "build-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $artifactsPath | Out-Null
+}
 $redirectedIntermediatePath = "obj\wappublish\$runtimeIdentifier\"
 $wapOutputPath = Join-Path (Split-Path -Parent $wapProjectPath) "bin\$Platform\$Configuration"
 $publishAot = $Aot.IsPresent.ToString().ToLowerInvariant()
@@ -262,10 +261,11 @@ Invoke-CheckedCommand -FilePath 'dotnet' -ArgumentList @(
     "-p:PublishAot=$publishAot"
     "-p:PublishTrimmed=$publishTrimmed"
     "-p:BaseIntermediateOutputPath=$redirectedIntermediatePath"
+    if ($WriteBinLog) { "-bl:$buildLogDirectory\wap-restore-{}.binlog" }
 )
 
 Write-Host "Building the WAP ($Configuration|$Platform)..."
-Invoke-CheckedCommand -FilePath $msbuildPath -ArgumentList @(
+$buildArguments = @(
     $wapProjectPath
     '/restore'
     '/t:Build'
@@ -276,12 +276,22 @@ Invoke-CheckedCommand -FilePath $msbuildPath -ArgumentList @(
     "/p:PublishTrimmed=$publishTrimmed"
     '/p:AppxBundle=Never'
     '/p:AppxPackageSigningEnabled=false'
+    if ($WriteBinLog) { "/bl:$buildLogDirectory\wap-build-{}.binlog" }
     '/nologo'
     '/m'
     '/v:minimal'
 )
+if ($BuildOnly) {
+    $buildArguments += @("/p:AppxPackageDir=$artifactsPath\", '/p:SkipKillRunningExecutable=true')
+}
+Invoke-CheckedCommand -FilePath $msbuildPath -ArgumentList $buildArguments
 
-$architectureSuffix = "_$Platform"
+$architectureSuffix = if ($Configuration -eq 'Debug') {
+    "_${Platform}_Debug"
+}
+else {
+    "_$Platform"
+}
 $msixPackage = Get-ChildItem -LiteralPath $artifactsPath -Recurse -File -Filter '*.msix' |
     Where-Object { $_.BaseName.EndsWith($architectureSuffix, [StringComparison]::OrdinalIgnoreCase) } |
     Sort-Object LastWriteTime -Descending |
@@ -291,6 +301,11 @@ if (-not $msixPackage) {
     throw "The WAP build did not produce a $Platform MSIX under '$artifactsPath'."
 }
 
+if ($BuildOnly) {
+    return $msixPackage
+}
+
+$makeAppxPath = Find-MakeAppx
 $deploymentPath = Join-Path $wapOutputPath 'AppX'
 $stagingPath = Join-Path $wapOutputPath "AppX.staging-$PID"
 $backupPath = Join-Path $wapOutputPath "AppX.backup-$PID"

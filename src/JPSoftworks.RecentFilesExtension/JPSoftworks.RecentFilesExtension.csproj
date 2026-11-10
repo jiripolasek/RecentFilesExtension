@@ -60,9 +60,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- WAP evaluates the app before importing its publish profile, so set Release publish defaults here too. -->
-    <PublishAot Condition="'$(PublishAot)' == '' and '$(Configuration)' == 'Release'">true</PublishAot>
-    <PublishTrimmed Condition="'$(PublishTrimmed)' == '' and '$(Configuration)' == 'Release'">true</PublishTrimmed>
+    <!-- Native AOT and trimming are deployment-time opt-ins. -->
     <PublishAot Condition="'$(PublishAot)' == ''">false</PublishAot>
     <PublishTrimmed Condition="'$(PublishTrimmed)' == ''">false</PublishTrimmed>
     <TrimMode>full</TrimMode>
@@ -107,12 +105,8 @@
     </PropertyGroup>
   </Target>
 
-  <Target Name="KillRunningExecutable" BeforeTargets="Build;Deploy;Publish">
-      <PropertyGroup>
-          <ExecutableName>$(AssemblyName).exe</ExecutableName>
-      </PropertyGroup>
-
-      <Exec Command="taskkill /F /IM $(ExecutableName)" ContinueOnError="true" IgnoreExitCode="true" />
+  <Target Name="KillRunningExecutable" BeforeTargets="Build;Deploy;Publish" Condition="'$(SkipKillRunningExecutable)' != 'true'">
+    <Exec Command="powershell -NoProfile -NonInteractive -Command &quot;Get-Process | Where-Object ProcessName -EQ '$(AssemblyName)' | Stop-Process -Force -ErrorAction Stop&quot;" ContinueOnError="WarnAndContinue" />
   </Target>
 
 </Project>

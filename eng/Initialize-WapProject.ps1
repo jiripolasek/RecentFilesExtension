@@ -166,9 +166,14 @@ function Get-XmlEscapedValue {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string] $Value
+        [string] $Value,
+
+        [switch] $MSBuildLiteral
     )
 
+    if ($MSBuildLiteral) {
+        $Value = [regex]::Replace($Value, '[%$@();''*?]', { param($match) '%{0:X2}' -f [int][char] $match.Value })
+    }
     return [Security.SecurityElement]::Escape($Value)
 }
 
@@ -515,13 +520,13 @@ $artifactsRelativePath = Get-RepositoryRelativePath `
     -Root $RepositoryRoot
 $repositoryRootRelativeToProps = [IO.Path]::GetRelativePath(
     (Split-Path -Parent $ExtensionPropsPath),
-    $RepositoryRoot).Replace('/', '\')
+    $RepositoryRoot)
 $extensionPropsRelativeToPackage = [IO.Path]::GetRelativePath(
     $PackageProjectDirectory,
     $ExtensionPropsPath).Replace('/', '\')
 $appProjectRelativeToPackage = [IO.Path]::GetRelativePath(
     $PackageProjectDirectory,
-    $AppProjectPath).Replace('/', '\')
+    $AppProjectPath)
 
 $packageExecutable = "$assemblyName\$assemblyName.exe"
 $packageProjectGuid = [Guid]::NewGuid().ToString('D')
@@ -530,20 +535,20 @@ $extensionPropsTemplate = Get-Content -LiteralPath $extensionPropsTemplatePath -
 $extensionPropsContent = Expand-Template `
     -Template $extensionPropsTemplate `
     -Values ([ordered]@{
-        REPOSITORY_ROOT_RELATIVE_PATH       = Get-XmlEscapedValue $repositoryRootRelativeToProps
-        APP_PROJECT_RELATIVE_PATH           = Get-XmlEscapedValue $appProjectRelativePath
-        APP_PROJECT_REFERENCE               = Get-XmlEscapedValue $appProjectRelativeToPackage
-        ASSEMBLY_NAME                       = Get-XmlEscapedValue $assemblyName
-        PACKAGE_PROJECT_RELATIVE_PATH       = Get-XmlEscapedValue $packageProjectRelativePath
-        PACKAGE_MANIFEST_RELATIVE_PATH      = Get-XmlEscapedValue $packageManifestRelativePath
-        PACKAGE_EXECUTABLE                  = Get-XmlEscapedValue $packageExecutable
+        REPOSITORY_ROOT_RELATIVE_PATH       = Get-XmlEscapedValue ($repositoryRootRelativeToProps.Replace('\', '/')) -MSBuildLiteral
+        APP_PROJECT_RELATIVE_PATH           = Get-XmlEscapedValue ($appProjectRelativePath.Replace('\', '/')) -MSBuildLiteral
+        APP_PROJECT_REFERENCE               = Get-XmlEscapedValue ($appProjectRelativeToPackage.Replace('\', '/')) -MSBuildLiteral
+        ASSEMBLY_NAME                       = Get-XmlEscapedValue $assemblyName -MSBuildLiteral
+        PACKAGE_PROJECT_RELATIVE_PATH       = Get-XmlEscapedValue ($packageProjectRelativePath.Replace('\', '/')) -MSBuildLiteral
+        PACKAGE_MANIFEST_RELATIVE_PATH      = Get-XmlEscapedValue ($packageManifestRelativePath.Replace('\', '/')) -MSBuildLiteral
+        PACKAGE_EXECUTABLE                  = Get-XmlEscapedValue ($packageExecutable.Replace('\', '/')) -MSBuildLiteral
         PACKAGE_PROJECT_GUID                = $packageProjectGuid
         TARGET_FRAMEWORK                    = Get-XmlEscapedValue $TargetFramework
         TARGET_PLATFORM_VERSION             = Get-XmlEscapedValue $TargetPlatformVersion
         TARGET_PLATFORM_MIN_VERSION         = Get-XmlEscapedValue $TargetPlatformMinVersion
         RUNTIME_IDENTIFIERS                 = Get-XmlEscapedValue $runtimeIdentifiers
         DEFAULT_LANGUAGE                    = Get-XmlEscapedValue $defaultLanguage
-        ARTIFACTS_RELATIVE_PATH             = Get-XmlEscapedValue $artifactsRelativePath
+        ARTIFACTS_RELATIVE_PATH             = Get-XmlEscapedValue ($artifactsRelativePath.Replace('\', '/')) -MSBuildLiteral
         SUPPORTS_NATIVE_AOT                 = $SupportsNativeAot.IsPresent.ToString().ToLowerInvariant()
         WINDOWS_SDK_BUILD_TOOLS_VERSION     = Get-XmlEscapedValue ([string] $WindowsSdkBuildToolsVersion)
     })
@@ -552,7 +557,7 @@ $wapTemplate = Get-Content -LiteralPath $wapTemplatePath -Raw
 $wapContent = Expand-Template `
     -Template $wapTemplate `
     -Values ([ordered]@{
-        EXTENSION_PROPS_RELATIVE_PATH = Get-XmlEscapedValue $extensionPropsRelativeToPackage
+        EXTENSION_PROPS_RELATIVE_PATH = Get-XmlEscapedValue $extensionPropsRelativeToPackage -MSBuildLiteral
     })
 
 $manifestContent = $null

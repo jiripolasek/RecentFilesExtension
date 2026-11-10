@@ -34,6 +34,11 @@ winget install -e --id JiriPolasek.RecentFilesforCommandPalette
 ### Manual installation
 - Download the installer from the [Releases](https://github.com/jiripolasek/RecentFilesExtension/releases) section and run it
 
+## Development
+
+See the [development guide](docs/dev/README.md) for local builds and tests,
+Command Palette deployment, Hyper-V testing, and CI/release tooling.
+
 ## Licence
 
 Apache 2.0

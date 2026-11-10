@@ -27,6 +27,12 @@ param(
     [string] $ExtensionPropsPath,
 
     [Parameter()]
+    [string] $Configuration,
+
+    [Parameter()]
+    [string] $Platform,
+
+    [Parameter()]
     [ValidateSet('Text', 'Json')]
     [string] $OutputFormat = 'Text'
 )
@@ -76,23 +82,15 @@ function Get-XmlProperty {
 function Resolve-RepositoryPropertyPath {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string] $Value,
 
         [Parameter(Mandatory)]
         [string] $Root
     )
 
-    $rootWithSeparator = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
-    $expanded = $Value.Replace('$(CmdPalRepositoryRoot)', $rootWithSeparator)
-    if ($expanded.Contains('$(')) {
-        return $null
-    }
-
-    if ([IO.Path]::IsPathRooted($expanded)) {
-        return [IO.Path]::GetFullPath($expanded)
-    }
-
-    return [IO.Path]::GetFullPath((Join-Path $Root $expanded))
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    return [IO.Path]::GetFullPath($Value.Replace('\', '/'), $Root)
 }
 
 function Test-PackageAsset {
@@ -195,12 +193,11 @@ if (-not (Test-Path -LiteralPath $ExtensionPropsPath -PathType Leaf)) {
 $canContinue = @($results | Where-Object Status -eq 'Fail').Count -eq 0
 if ($canContinue) {
     [xml] $wapProject = Get-Content -LiteralPath $WapProjectPath -Raw
-    [xml] $extensionProps = Get-Content -LiteralPath $ExtensionPropsPath -Raw
     $wapText = Get-Content -LiteralPath $WapProjectPath -Raw
     $extensionPropsText = Get-Content -LiteralPath $ExtensionPropsPath -Raw
     $packageProjectDirectory = Split-Path -Parent $WapProjectPath
 
-    foreach ($requiredProperty in @(
+    $requiredProperties = @(
             'CmdPalExtensionProject',
             'CmdPalExtensionProjectReference',
             'CmdPalExtensionAssemblyName',
@@ -213,8 +210,33 @@ if ($canContinue) {
             'CmdPalTargetPlatformMinVersion',
             'CmdPalRuntimeIdentifiers',
             'CmdPalArtifactsPath',
-            'CmdPalSupportsNativeAot')) {
-        $propertyValue = Get-XmlProperty -Document $extensionProps -Name $requiredProperty
+            'CmdPalSupportsNativeAot')
+    try {
+        $defaults = @{ DefaultConfiguration = 'Release'; DefaultPlatform = 'x64' }
+        $configPath = Join-Path (Split-Path -Parent $ExtensionPropsPath) 'Package.config.psd1'
+        if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+            $defaults = Import-PowerShellDataFile -LiteralPath $configPath
+        }
+        if ([string]::IsNullOrWhiteSpace($Configuration)) { $Configuration = $defaults.DefaultConfiguration }
+        if ([string]::IsNullOrWhiteSpace($Platform)) { $Platform = $defaults.DefaultPlatform }
+        if ([string]::IsNullOrWhiteSpace($Configuration) -or [string]::IsNullOrWhiteSpace($Platform)) {
+            throw 'Configuration and Platform must be supplied or defined by the package defaults.'
+        }
+        $evaluationWarnings = @()
+        $extensionProperties = (& (Join-Path $PSScriptRoot 'Get-MSBuildEvaluation.ps1') -Path $ExtensionPropsPath -Property $requiredProperties -Configuration $Configuration -Platform $Platform -WarningVariable evaluationWarnings -WarningAction SilentlyContinue).Properties
+        foreach ($warning in $evaluationWarnings) {
+            Add-Result -Status Warning -Check 'MSBuild evaluation' -Message $warning.Message
+        }
+    }
+    catch {
+        Add-Result -Status Fail -Check 'Shared properties' -Message $_.Exception.Message
+        $canContinue = $false
+    }
+}
+
+if ($canContinue) {
+    foreach ($requiredProperty in $requiredProperties) {
+        $propertyValue = $extensionProperties[$requiredProperty]
         if ([string]::IsNullOrWhiteSpace($propertyValue)) {
             Add-Result `
                 -Status Fail `
@@ -225,7 +247,7 @@ if ($canContinue) {
             Add-Result `
                 -Status Pass `
                 -Check 'Shared properties' `
-                -Message "'$requiredProperty' is declared."
+                -Message "'$requiredProperty' evaluates to a nonempty value."
         }
     }
 
@@ -242,9 +264,7 @@ if ($canContinue) {
             -Message 'No literal absolute Windows paths were found.'
     }
 
-    $appProjectValue = Get-XmlProperty `
-        -Document $extensionProps `
-        -Name 'CmdPalExtensionProject'
+    $appProjectValue = $extensionProperties.CmdPalExtensionProject
     $appProjectPath = Resolve-RepositoryPropertyPath `
         -Value $appProjectValue `
         -Root $RepositoryRoot
@@ -262,9 +282,7 @@ if ($canContinue) {
             -Message "Resolved '$appProjectPath'."
     }
 
-    $appProjectReferenceValue = Get-XmlProperty `
-        -Document $extensionProps `
-        -Name 'CmdPalExtensionProjectReference'
+    $appProjectReferenceValue = $extensionProperties.CmdPalExtensionProjectReference
     $appProjectReferencePath = $null
     if (-not [string]::IsNullOrWhiteSpace($appProjectReferenceValue) -and
         -not [IO.Path]::IsPathRooted($appProjectReferenceValue) -and
@@ -289,9 +307,7 @@ if ($canContinue) {
             -Message "WAP-relative reference resolves to '$appProjectReferencePath'."
     }
 
-    $configuredWapValue = Get-XmlProperty `
-        -Document $extensionProps `
-        -Name 'CmdPalPackageProject'
+    $configuredWapValue = $extensionProperties.CmdPalPackageProject
     $configuredWapPath = Resolve-RepositoryPropertyPath `
         -Value $configuredWapValue `
         -Root $RepositoryRoot
@@ -311,9 +327,7 @@ if ($canContinue) {
             -Message 'CmdPalPackageProject resolves to the checked WAP.'
     }
 
-    $manifestValue = Get-XmlProperty `
-        -Document $extensionProps `
-        -Name 'CmdPalPackageManifest'
+    $manifestValue = $extensionProperties.CmdPalPackageManifest
     $manifestPath = Resolve-RepositoryPropertyPath `
         -Value $manifestValue `
         -Root $RepositoryRoot
@@ -449,9 +463,6 @@ if ($canContinue) {
     $publishAotNodes = @(
         $wapProject.SelectNodes("//*[local-name()='PublishAot']")
     )
-    $publishTrimmedNodes = @(
-        $wapProject.SelectNodes("//*[local-name()='PublishTrimmed']")
-    )
     $unconditionalAot = @(
         $publishAotNodes |
             Where-Object {
@@ -472,47 +483,6 @@ if ($canContinue) {
             -Status Pass `
             -Check 'Native AOT policy' `
             -Message 'The WAP does not enable Native AOT unconditionally.'
-    }
-
-    $supportsNativeAotValue = Get-XmlProperty `
-        -Document $extensionProps `
-        -Name 'CmdPalSupportsNativeAot'
-    $supportsNativeAot = $supportsNativeAotValue -and
-        $supportsNativeAotValue.Equals(
-            'true',
-            [StringComparison]::OrdinalIgnoreCase)
-    if ($supportsNativeAot) {
-        $releaseAotDefault = @(
-            $publishAotNodes |
-                Where-Object {
-                    $_.InnerText.Trim().Equals(
-                        'true',
-                        [StringComparison]::OrdinalIgnoreCase) -and
-                    $_.GetAttribute('Condition') -match 'Configuration.+Release'
-                }
-        )
-        $releaseTrimmedDefault = @(
-            $publishTrimmedNodes |
-                Where-Object {
-                    $_.InnerText.Trim().Equals(
-                        'true',
-                        [StringComparison]::OrdinalIgnoreCase) -and
-                    $_.GetAttribute('Condition') -match 'Configuration.+Release'
-                }
-        )
-        if ($releaseAotDefault.Count -eq 0 -or
-            $releaseTrimmedDefault.Count -eq 0) {
-            Add-Result `
-                -Status Fail `
-                -Check 'Native AOT policy' `
-                -Message 'CmdPalSupportsNativeAot is true, but the WAP does not default Release packages to Native AOT with trimming.'
-        }
-        else {
-            Add-Result `
-                -Status Pass `
-                -Check 'Native AOT policy' `
-                -Message 'The WAP defaults Release packages to Native AOT with trimming.'
-        }
     }
 
     $buildToolsReference = $wapProject.SelectSingleNode(
@@ -613,40 +583,6 @@ if ($canContinue) {
                 -Message 'No stale single-project MSIX settings were found.'
         }
 
-        if ($supportsNativeAot) {
-            $appReleaseAotDefault = @(
-                $appProject.SelectNodes("//*[local-name()='PublishAot']") |
-                    Where-Object {
-                        $_.InnerText.Trim().Equals(
-                            'true',
-                            [StringComparison]::OrdinalIgnoreCase) -and
-                        $_.GetAttribute('Condition') -match 'Configuration.+Release'
-                    }
-            )
-            $appReleaseTrimmedDefault = @(
-                $appProject.SelectNodes("//*[local-name()='PublishTrimmed']") |
-                    Where-Object {
-                        $_.InnerText.Trim().Equals(
-                            'true',
-                            [StringComparison]::OrdinalIgnoreCase) -and
-                        $_.GetAttribute('Condition') -match 'Configuration.+Release'
-                    }
-            )
-            if ($appReleaseAotDefault.Count -eq 0 -or
-                $appReleaseTrimmedDefault.Count -eq 0) {
-                Add-Result `
-                    -Status Fail `
-                    -Check 'Native AOT policy' `
-                    -Message 'The application must default PublishAot and PublishTrimmed to true for Release so DesktopBridge sees them during early project evaluation.'
-            }
-            else {
-                Add-Result `
-                    -Status Pass `
-                    -Check 'Native AOT policy' `
-                    -Message 'The application defaults Release publishing to Native AOT with trimming.'
-            }
-        }
-
         foreach ($sharedMapping in @(
                 [pscustomobject]@{
                     Property = 'TargetFramework'
@@ -708,12 +644,6 @@ if ($canContinue) {
             $selfContainedValue = Get-XmlProperty `
                 -Document $publishProfile `
                 -Name 'SelfContained'
-            $publishAotValue = Get-XmlProperty `
-                -Document $publishProfile `
-                -Name 'PublishAot'
-            $publishTrimmedValue = Get-XmlProperty `
-                -Document $publishProfile `
-                -Name 'PublishTrimmed'
             if ($singleFileValue -and $singleFileValue.Equals(
                     'true',
                     [StringComparison]::OrdinalIgnoreCase)) {
@@ -742,26 +672,6 @@ if ($canContinue) {
                     -Status Pass `
                     -Check 'Publish profiles' `
                     -Message "$($profileEntry.Key) explicitly publishes self-contained."
-            }
-            if ($supportsNativeAot -and
-                (-not $publishAotValue -or
-                    -not $publishAotValue.Equals(
-                        'true',
-                        [StringComparison]::OrdinalIgnoreCase) -or
-                    -not $publishTrimmedValue -or
-                    -not $publishTrimmedValue.Equals(
-                        'true',
-                        [StringComparison]::OrdinalIgnoreCase))) {
-                Add-Result `
-                    -Status Fail `
-                    -Check 'Publish profiles' `
-                    -Message "$($profileEntry.Key) must enable PublishAot and PublishTrimmed when CmdPalSupportsNativeAot is true."
-            }
-            elseif ($supportsNativeAot) {
-                Add-Result `
-                    -Status Pass `
-                    -Check 'Publish profiles' `
-                    -Message "$($profileEntry.Key) enables Native AOT and trimming."
             }
         }
 
@@ -803,12 +713,8 @@ if ($canContinue) {
                     -Message 'Source manifest uses the WAP application tokens.'
             }
 
-            $configuredTargetVersion = Get-XmlProperty `
-                -Document $extensionProps `
-                -Name 'CmdPalTargetPlatformVersion'
-            $configuredMinimumVersion = Get-XmlProperty `
-                -Document $extensionProps `
-                -Name 'CmdPalTargetPlatformMinVersion'
+            $configuredTargetVersion = $extensionProperties.CmdPalTargetPlatformVersion
+            $configuredMinimumVersion = $extensionProperties.CmdPalTargetPlatformMinVersion
             $targetDeviceFamilies = @(
                 $manifest.SelectNodes("//*[local-name()='TargetDeviceFamily']")
             )
@@ -899,10 +805,8 @@ if ($canContinue) {
                         -Message 'Manifest provider CLSID matches a C# [Guid] attribute.'
                 }
 
-                $configuredExecutable = Get-XmlProperty `
-                    -Document $extensionProps `
-                    -Name 'CmdPalPackageExecutable'
-                $manifestExecutable = [string] $exeServer.GetAttribute('Executable')
+                $configuredExecutable = $extensionProperties.CmdPalPackageExecutable.Replace('\', '/')
+                $manifestExecutable = ([string] $exeServer.GetAttribute('Executable')).Replace('\', '/')
                 if (-not $manifestExecutable.Equals(
                         $configuredExecutable,
                         [StringComparison]::OrdinalIgnoreCase)) {

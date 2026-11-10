@@ -1,0 +1,67 @@
+name: Publish to WinGet
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable release tag with Store-signed MSIX installers
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winget-submission
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Update WinGet manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read SDK version
+        id: sdk
+        shell: pwsh
+        run: |
+          "version=$(./eng/Get-DotNetVersion.ps1)" >> $env:GITHUB_OUTPUT
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ steps.sdk.outputs.version }}
+
+      - name: Validate release and installers
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINGET_TOKEN_CONFIGURED: ${{ secrets.WINGET_TOKEN != '' }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: |
+          if ($env:WINGET_TOKEN_CONFIGURED -ne 'true') { throw 'Configure the WINGET_TOKEN repository secret before submitting to WinGet.' }
+          $release = ./eng/Get-WinGetRelease.ps1 -Tag $env:RELEASE_TAG
+          "release=$($release | ConvertTo-Json -Compress)" >> $env:GITHUB_OUTPUT
+
+      - name: Submit manifest update to WinGet
+        id: winget
+        uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
+        with:
+          identifier: ${{ fromJSON(steps.release.outputs.release).Identifier }}
+          version: ${{ fromJSON(steps.release.outputs.release).Version }}
+          release-tag: ${{ fromJSON(steps.release.outputs.release).Tag }}
+          release-notes-url: ${{ fromJSON(steps.release.outputs.release).Url }}
+          installers-regex: '(?i)\.msix$'
+          token: ${{ secrets.WINGET_TOKEN }}
+
+      - name: Link WinGet submission
+        shell: pwsh
+        env:
+          PR_URL: ${{ steps.winget.outputs.pr-url }}
+        run: '"WinGet pull request: $env:PR_URL" >> $env:GITHUB_STEP_SUMMARY'

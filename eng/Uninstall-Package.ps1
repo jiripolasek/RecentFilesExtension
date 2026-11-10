@@ -4,7 +4,7 @@ Uninstalls the configured WAP package for the current user.
 
 .DESCRIPTION
 Reads the package identity from the manifest configured in
-Package.config.psd1 and removes matching packages for the current user.
+CmdPal.Extension.props and removes matching packages for the current user.
 Generated AppX layout files are not deleted.
 
 .EXAMPLE
@@ -47,15 +47,9 @@ if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
     throw "WAP package configuration was not found: '$ConfigPath'."
 }
 
-$packageConfig = Import-PowerShellDataFile -LiteralPath $ConfigPath
-foreach ($requiredConfigKey in @('RepositoryRoot', 'PackageManifestPath')) {
-    if (-not $packageConfig.ContainsKey($requiredConfigKey)) {
-        throw "WAP package configuration '$ConfigPath' is missing '$requiredConfigKey'."
-    }
-}
+$packageConfig = & (Join-Path $PSScriptRoot 'Get-PackageConfig.ps1') -ConfigPath $ConfigPath
 
-$configDirectory = Split-Path -Parent $ConfigPath
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $configDirectory ([string] $packageConfig.RepositoryRoot)))
+$repoRoot = $packageConfig.RepositoryRoot
 $configuredManifestPath = [string] $packageConfig.PackageManifestPath
 $packageManifestPath = if ([IO.Path]::IsPathRooted($configuredManifestPath)) {
     [IO.Path]::GetFullPath($configuredManifestPath)

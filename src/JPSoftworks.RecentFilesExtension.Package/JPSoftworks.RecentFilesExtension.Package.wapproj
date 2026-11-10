@@ -51,9 +51,7 @@
     <AppxSymbolPackageEnabled>true</AppxSymbolPackageEnabled>
     <AppxPackageIncludePrivateSymbols>false</AppxPackageIncludePrivateSymbols>
 
-    <!-- Release packages are optimized; local deployment automation overrides these explicitly. -->
-    <PublishAot Condition="'$(PublishAot)' == '' and '$(Configuration)' == 'Release'">true</PublishAot>
-    <PublishTrimmed Condition="'$(PublishTrimmed)' == '' and '$(Configuration)' == 'Release'">true</PublishTrimmed>
+    <!-- Native AOT and trimming are deployment-time opt-ins. -->
     <PublishAot Condition="'$(PublishAot)' == ''">false</PublishAot>
     <PublishTrimmed Condition="'$(PublishTrimmed)' == ''">false</PublishTrimmed>
     <RuntimeIdentifiers>$(CmdPalRuntimeIdentifiers)</RuntimeIdentifiers>
@@ -88,6 +86,14 @@
       Condition="'$(ManagePackageVersionsCentrally)' != 'true' and '$(CmdPalWindowsSdkBuildToolsVersion)' != ''" />
   </ItemGroup>
   <Import Project="$(WapProjPath)\Microsoft.DesktopBridge.targets" />
+  <Target Name="RestoreWapPublishProjects" AfterTargets="SetProjectReferenceProperties"
+          Condition="'$(BuildingInsideVisualStudio)' == 'true' and '$(_IsGeneratingAppxPackage)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <!-- Restore before publish projects are evaluated so their generated NuGet imports are loaded. -->
+    <MakeDir Directories="$(CmdPalArtifactsPath)logs" />
+    <Exec
+      Condition="'%(ProjectReferenceWithPublishProps.TargetFrameworkIdentifier)' == '.NETCoreApp'"
+      Command="&quot;$(MSBuildBinPath)\MSBuild.exe&quot; &quot;%(ProjectReferenceWithPublishProps.Identity)&quot; /t:Restore /p:Configuration=$(Configuration) /p:Platform=$(Platform) /p:PublishAot=$(PublishAot) /p:PublishTrimmed=$(PublishTrimmed) &quot;/p:$([System.Text.RegularExpressions.Regex]::Replace('%(ProjectReferenceWithPublishProps.AdditionalProperties)', ';+', ';').Trim(';'))&quot; &quot;/bl:$(CmdPalArtifactsPath)logs\wap-publish-restore-{}.binlog&quot; /nologo /v:minimal /nr:false" />
+  </Target>
 
   <Target Name="ValidateCmdPalWapConfiguration" BeforeTargets="PrepareForBuild">
     <Error

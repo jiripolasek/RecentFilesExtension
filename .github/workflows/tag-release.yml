@@ -1,0 +1,59 @@
+name: Tag release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read SDK version
+        id: sdk
+        shell: pwsh
+        run: |
+          "version=$(./eng/Get-DotNetVersion.ps1)" >> $env:GITHUB_OUTPUT
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ steps.sdk.outputs.version }}
+      - name: Tag the package version and start Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_TYPE -ne 'branch') { throw 'Run this workflow on the branch to release.' }
+          $config = ./eng/Get-WorkflowConfig.ps1
+          [xml] $manifest = Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $config.PackageManifestPath) -Raw
+          $packageVersion = [string] $manifest.Package.Identity.Version
+          if ($packageVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.0$') { throw 'The package version must use MAJOR.MINOR.PATCH.0.' }
+          $version = ./eng/Get-ReleaseVersion.ps1 -Tag "v$packageVersion"
+          $tag = "v$($version.ToString(3))"
+
+          $response = gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to check existing release tags.' }
+          $existing = @($response | ConvertFrom-Json | Where-Object { $_.ref -ceq "refs/tags/$tag" })
+          if ($existing.Count -gt 0) {
+            "$tag already exists. No tag was changed and Release was not started." >> $env:GITHUB_STEP_SUMMARY
+            return
+          }
+
+          gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$env:GITHUB_SHA"
+          if ($LASTEXITCODE -ne 0) { throw "Unable to create '$tag'. Existing tags are never overwritten." }
+          "Created $tag at $env:GITHUB_SHA." >> $env:GITHUB_STEP_SUMMARY
+
+          gh workflow run release.yml --repo "$env:GITHUB_REPOSITORY" --ref "$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Created '$tag', but could not start Release. Run Release manually on '$tag'." }
+          "Started Release for $tag." >> $env:GITHUB_STEP_SUMMARY

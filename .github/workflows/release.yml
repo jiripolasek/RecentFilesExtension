@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate release tag
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag') { throw 'Run this workflow on an existing release tag.' }
+          $version = ./eng/Get-ReleaseVersion.ps1 -Tag $env:GITHUB_REF_NAME
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+  validate:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Package for Store (${{ matrix.platform }})
+    needs: [version, validate]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate.outputs.config).Matrix }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      TARGET_PLATFORM: ${{ matrix.platform }}
+      TARGET_RUNTIME: ${{ matrix.runtime }}
+      WORKFLOW_CONFIG: ${{ toJSON(matrix.config) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ fromJSON(needs.validate.outputs.config).DotNetVersion }}
+
+      - name: Set package version
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE $config.PackageManifestPath
+          [xml] $manifest = Get-Content -LiteralPath $manifestPath -Raw
+          $manifest.Package.Identity.Version = $env:RELEASE_VERSION
+          $manifest.Save($manifestPath)
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+        with:
+          vs-version: '[18.0,19.0)'
+          msbuild-architecture: x64
+
+      - name: Restore WAP publish assets
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          dotnet restore $config.AppProjectPath --runtime $env:TARGET_RUNTIME "-p:Configuration=$($config.DefaultConfiguration)" "-p:Platform=$env:TARGET_PLATFORM" -p:SelfContained=true -p:PublishAot=true -p:PublishTrimmed=true "-p:BaseIntermediateOutputPath=obj/wappublish/$env:TARGET_RUNTIME/"
+
+      - name: Build unsigned Store upload packages
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          msbuild $config.WapProjectPath /restore /t:Build /m /nologo /verbosity:minimal "/p:Configuration=$($config.DefaultConfiguration)" "/p:Platform=$env:TARGET_PLATFORM" "/p:CmdPalTargetPlatformVersion=$($config.WindowsSdkVersion)" "/p:AppxPackageDir=$env:GITHUB_WORKSPACE/$($config.ArtifactsPath)/" /p:PublishAot=true /p:PublishTrimmed=true /p:UapAppxPackageBuildMode=StoreUpload /p:AppxBundle=Never /p:AppxPackageSigningEnabled=false /p:SkipKillRunningExecutable=true
+
+      - name: Save Store packages as GitHub artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-store-packages-${{ github.ref_name }}-${{ matrix.platform }}
+          path: ${{ matrix.config.ArtifactsPath }}/*.msixupload
+          if-no-files-found: error
+          retention-days: 30
+
+  draft-release:
+    name: Prepare draft release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read release notes from changelog
+        shell: pwsh
+        run: |
+          ./eng/Get-ReleaseNotes.ps1 -Tag $env:GITHUB_REF_NAME | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-notes.md')
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo 'A release already exists. Leaving it unchanged.'
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --notes-file "$NOTES_FILE" --title "$GITHUB_REF_NAME"
+          fi
