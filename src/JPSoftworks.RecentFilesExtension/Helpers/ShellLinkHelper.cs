@@ -6,6 +6,7 @@
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+using JPSoftworks.RecentFilesExtension.Sources;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Storage.FileSystem;
@@ -208,21 +209,21 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
 
         Span<char> buffer = stackalloc char[MAX_PATH];
         WIN32_FIND_DATAW findData = default;
+        int pathResult;
         fixed (char* targetPath = buffer)
         {
-            Marshal.ThrowExceptionForHR(
-                this._shellLink.GetPath(targetPath, buffer.Length, (nint)(&findData), (uint)SLGP_FLAGS.SLGP_RAWPATH));
+            pathResult = this._shellLink.GetPath(targetPath, buffer.Length, (nint)(&findData), (uint)SLGP_FLAGS.SLGP_RAWPATH);
         }
 
         this.IsDirectory = (findData.dwFileAttributes & (uint)FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-        var term = buffer.IndexOf('\0');
-        if (term < 0)
+        if (!this.TryGetTargetPathFromIdList(out var resolvedPath))
         {
-            term = buffer.Length;
+            Marshal.ThrowExceptionForHR(pathResult);
+            resolvedPath = ReadNullTerminatedString(buffer);
         }
 
-        this.TargetPath = new string(buffer[..term]);
+        this.TargetPath = resolvedPath;
         return this.TargetPath;
     }
 
@@ -269,9 +270,28 @@ public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
         }
 
         return new(
-            ReadNullTerminatedString(targetPathBuffer),
+            this.TryGetTargetPathFromIdList(out var resolvedPath) ? resolvedPath : ReadNullTerminatedString(targetPathBuffer),
             ReadNullTerminatedString(argumentsBuffer),
             ReadNullTerminatedString(descriptionBuffer));
+    }
+
+    private unsafe bool TryGetTargetPathFromIdList(out string path)
+    {
+        // GetPath truncates at MAX_PATH even when given a larger buffer.
+        path = string.Empty;
+        nint itemIdList = 0;
+        try
+        {
+            return this._shellLink.GetIDList(&itemIdList) >= 0 &&
+                   ShellItemIdListPathResolver.TryResolve(itemIdList, out path);
+        }
+        finally
+        {
+            if (itemIdList != 0)
+            {
+                Marshal.FreeCoTaskMem(itemIdList);
+            }
+        }
     }
 
     private static string ReadNullTerminatedString(ReadOnlySpan<char> value)

@@ -15,6 +15,7 @@
 
 ### Changed
 
+- Opt in to Windows long-path handling for supported file operations.
 - Merge recent-file sources into one list, remove duplicate targets, and order entries by their most recent usage.
 - Reduce initial shortcut-loading work and load thumbnails in the background so results can appear before their icons are ready.
 - Limit concurrent thumbnail extraction and cancel obsolete thumbnail work when the search changes.
@@ -22,6 +23,7 @@
 
 ### Fixed
 
+- Preserve shortcut targets longer than 260 characters in Recent Items, Office Recent, and Office Jump Lists.
 - Avoid synchronous directory probes on unavailable network shares when loading results, filtering folders, or changing appearance settings.
 - Keep search, paging, and refresh state consistent during initialization, rapid searches, source updates, and shutdown; ignore results from canceled or superseded work.
 - Refresh cached entries when shortcuts are renamed or replaced, even when their targets remain unchanged, and retry transient shortcut-reading failures on later refreshes.

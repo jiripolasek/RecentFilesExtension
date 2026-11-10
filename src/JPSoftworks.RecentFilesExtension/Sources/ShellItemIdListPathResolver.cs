@@ -22,12 +22,25 @@ internal static partial class ShellItemIdListPathResolver
             return false;
         }
 
-        var pathBuffer = new char[MaximumPathLength];
         fixed (byte* itemIdListPointer = itemIdList)
+        {
+            return TryResolve((nint)itemIdListPointer, out path);
+        }
+    }
+
+    internal static unsafe bool TryResolve(nint itemIdList, out string path)
+    {
+        path = string.Empty;
+        if (itemIdList == 0)
+        {
+            return false;
+        }
+
+        var pathBuffer = new char[MaximumPathLength];
         fixed (char* pathPointer = pathBuffer)
         {
             if (SHGetPathFromIDListEx(
-                    itemIdListPointer,
+                    (byte*)itemIdList,
                     pathPointer,
                     (uint)pathBuffer.Length,
                     0) == 0)
