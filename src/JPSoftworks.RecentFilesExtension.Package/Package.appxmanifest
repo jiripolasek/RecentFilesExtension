@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" IgnorableNamespaces="uap uap3 rescap">
-  <Identity Name="JiriPolasek.RecentFilesforCommandPalette" Publisher="CN=735F2779-478E-4220-AA28-465CBADFF852" Version="0.7.0.0" />
+  <Identity Name="JiriPolasek.RecentFilesforCommandPalette" Publisher="CN=735F2779-478E-4220-AA28-465CBADFF852" Version="0.10.0.0" />
   <!-- When you're ready to publish your extension, you'll need to change the
        Publisher= to match your own identity -->
   <Properties>

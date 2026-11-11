@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.0] - Unreleased
+## [0.10.0] - 2026-11-11
 
 ### Added
 
@@ -42,3 +42,27 @@
 - Add Hyper-V test deployment with per-architecture builds, development signing, optional certificate trust and checkpoint restoration, dry runs, and deployment reports.
 - Expand automated coverage for recent-file parsing, discovery, paths, settings, appearance, packaging, and release/deployment tooling; update Command Palette and Windows interop dependencies.
 - Add development, release, and VM-testing documentation and repository skills.
+
+## [0.6.1] - 2025-08-01
+
+- Improved caching and overall performance.
+- Reduced the time it takes to load the initial list of recent files.
+- Enabled Windows Efficiency mode to reduce CPU and battery use.
+
+[GitHub release](https://github.com/jiripolasek/RecentFilesExtension/releases/tag/v0.6.1)
+
+## [0.4.0] - 2025-05-09
+
+- Made the recent files list appear immediately. [#3](https://github.com/jiripolasek/RecentFilesExtension/pull/3)
+- Added support for glob patterns in searches. [#4](https://github.com/jiripolasek/RecentFilesExtension/pull/4)
+- Added a user interface for people who launch the extension directly. [#6](https://github.com/jiripolasek/RecentFilesExtension/pull/6)
+- Fixed cases where the extension could hang. [#10](https://github.com/jiripolasek/RecentFilesExtension/pull/10)
+- Set the extension's assembly metadata. [#11](https://github.com/jiripolasek/RecentFilesExtension/pull/11)
+
+[GitHub release](https://github.com/jiripolasek/RecentFilesExtension/releases/tag/v0.4.0)
+
+## [0.1.3] - 2025-05-06
+
+- Initial release.
+
+[GitHub release](https://github.com/jiripolasek/RecentFilesExtension/releases/tag/v0.1.3)
