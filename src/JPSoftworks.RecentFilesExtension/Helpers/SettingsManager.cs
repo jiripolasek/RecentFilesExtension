@@ -5,6 +5,8 @@
 // ------------------------------------------------------------
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using JPSoftworks.RecentFilesExtension.Resources;
 
 namespace JPSoftworks.RecentFilesExtension.Helpers;
@@ -12,6 +14,7 @@ namespace JPSoftworks.RecentFilesExtension.Helpers;
 internal sealed class SettingsManager : JsonSettingsManager, IRecentFilesSettings
 {
     private const string DefaultNamespace = "jpsoftworks.recentfiles";
+    private readonly Lock _persistenceLock = new();
 
     [SuppressMessage("Maintainability", "CA1507:Use nameof to express symbol names", Justification = "Persisted settings keys must remain stable.")]
     private readonly ToggleSetting _includeOpenSaveMru = new(
@@ -90,6 +93,89 @@ internal sealed class SettingsManager : JsonSettingsManager, IRecentFilesSetting
 
     public event EventHandler? AppearanceChanged;
 
+    public override void LoadSettings()
+    {
+        lock (this._persistenceLock)
+        {
+            try
+            {
+                var json = File.ReadAllText(this.FilePath);
+                if (JsonNode.Parse(json) is not JsonObject)
+                {
+                    throw new JsonException("Settings must contain a JSON object.");
+                }
+
+                this.Settings.Update(json);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // A new installation has no saved settings yet.
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to load {Path.GetFileName(this.FilePath)} {ExceptionDiagnostics.Format(ex)}");
+            }
+        }
+    }
+
+    public override void SaveSettings()
+    {
+        lock (this._persistenceLock)
+        {
+            string? temporaryPath = null;
+            try
+            {
+                var path = Path.GetFullPath(this.FilePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                JsonObject saved;
+                try
+                {
+                    saved = JsonNode.Parse(File.ReadAllText(path)) as JsonObject
+                        ?? throw new JsonException("Settings must contain a JSON object.");
+                }
+                catch (FileNotFoundException)
+                {
+                    saved = new();
+                }
+                catch (JsonException ex)
+                {
+                    var backupPath = $"{path}.{Guid.NewGuid():N}.corrupt";
+                    File.Copy(path, backupPath);
+                    Logger.LogError($"Invalid settings preserved at {Path.GetFileName(backupPath)}; saving current settings {ExceptionDiagnostics.Format(ex)}");
+                    saved = new();
+                }
+
+                var current = JsonNode.Parse(this.Settings.ToJson())!.AsObject();
+                foreach (var (key, value) in current)
+                {
+                    saved[key] = value?.DeepClone();
+                }
+
+                temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+                File.WriteAllText(temporaryPath, saved.ToJsonString());
+                File.Move(temporaryPath, path, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to save {Path.GetFileName(this.FilePath)} {ExceptionDiagnostics.Format(ex)}");
+            }
+            finally
+            {
+                if (temporaryPath is not null)
+                {
+                    try
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Failed to remove temporary settings file {Path.GetFileName(temporaryPath)} {ExceptionDiagnostics.Format(ex)}");
+                    }
+                }
+            }
+        }
+    }
+
     public bool IncludeOpenSaveMru => this._includeOpenSaveMru.Value;
 
     public bool IncludeOfficeRecentFiles => this._includeOfficeRecentFiles.Value;
@@ -146,7 +232,6 @@ internal sealed class SettingsManager : JsonSettingsManager, IRecentFilesSetting
     private static string SettingsJsonPath()
     {
         var directory = Utilities.BaseSettingsPath("Microsoft.CmdPal");
-        Directory.CreateDirectory(directory);
         return Path.Combine(directory, "settings.json");
     }
 }

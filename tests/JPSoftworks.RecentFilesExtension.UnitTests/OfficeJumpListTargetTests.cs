@@ -70,30 +70,62 @@ public sealed class OfficeJumpListTargetTests
     {
         var created = OfficeJumpListTarget.TryCreateDesktopLaunchUri(
             @"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE",
-            "https://contoso.sharepoint.com/Documents/report.xlsx?web=1#sheet",
+            "https://contoso.sharepoint.com/Documents/Report.xlsx?token=Ab&web=1#sheet",
             out var launchUri);
 
         Assert.IsTrue(created);
         Assert.AreEqual(
-            "ms-excel:ofe|u|https://contoso.sharepoint.com/Documents/report.xlsx",
+            "ms-excel:ofe|u|https://contoso.sharepoint.com/Documents/Report.xlsx?token=Ab",
             launchUri);
     }
 
     [TestMethod]
     public void CreateRecentFileCarriesOfficeActivationAndIconMetadata()
     {
-        const string applicationPath = @"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE";
+        var directory = Directory.CreateTempSubdirectory("OfficeActivation-");
+        try
+        {
+            var applicationPath = Path.Combine(directory.FullName, "EXCEL.EXE");
+            File.WriteAllText(applicationPath, string.Empty);
+            var recentFile = OfficeApplications.CreateRecentFile(
+                "https://contoso.sharepoint.com/Documents/report.xlsx?web=1",
+                DateTimeOffset.UtcNow,
+                applicationPath,
+                _ => throw new InvalidOperationException("The existing application path should be used."));
+
+            Assert.AreEqual(
+                "ms-excel:ofe|u|https://contoso.sharepoint.com/Documents/report.xlsx",
+                recentFile.FullPath);
+            Assert.AreEqual(applicationPath, recentFile.IconPath);
+            Assert.AreEqual(
+                "https://contoso.sharepoint.com/Documents/report.xlsx?web=1",
+                recentFile.TargetPath);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CloudDocumentsUseDesktopOfficeOnlyWhenAnExecutableIsFound(bool installed)
+    {
+        const string target = "https://contoso.sharepoint.com/Documents/report.xlsx?web=1";
+        var staleApplicationPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "EXCEL.EXE");
+        const string resolvedApplicationPath = @"C:\Office\EXCEL.EXE";
         var recentFile = OfficeApplications.CreateRecentFile(
-            "https://contoso.sharepoint.com/Documents/report.xlsx?web=1",
-            DateTimeOffset.UtcNow,
-            applicationPath);
+            target, DateTimeOffset.UtcNow, staleApplicationPath, executableName =>
+            {
+                Assert.AreEqual("EXCEL.EXE", executableName);
+                return installed ? resolvedApplicationPath : null;
+            });
 
         Assert.AreEqual(
-            "ms-excel:ofe|u|https://contoso.sharepoint.com/Documents/report.xlsx",
+            installed ? "ms-excel:ofe|u|https://contoso.sharepoint.com/Documents/report.xlsx" : target,
             recentFile.FullPath);
-        Assert.AreEqual(applicationPath, recentFile.IconPath);
-        Assert.AreEqual(
-            "https://contoso.sharepoint.com/Documents/report.xlsx?web=1",
-            recentFile.TargetPath);
+        Assert.AreEqual(installed ? resolvedApplicationPath : null, recentFile.IconPath);
+        Assert.AreEqual(target, recentFile.TargetPath);
     }
 }

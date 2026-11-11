@@ -17,43 +17,35 @@ internal sealed partial class RecentItemsFolderSource : IRecentFileSource
     private const string ShortcutFileSearchPattern = "*.lnk";
 
     private readonly CachedShellLinksHelper _shellLinksHelper = new();
-    private readonly FileSystemWatcher? _watcher;
+    private readonly RecentFolderWatcher _watcher;
     private readonly string _folderPath;
-    private bool _isDisposed;
 
     public RecentItemsFolderSource()
+        : this(Environment.GetFolderPath(Environment.SpecialFolder.Recent))
     {
-        this._folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
-        {
-            return;
-        }
+    }
 
-        this._watcher = new(this._folderPath, ShortcutFileSearchPattern)
-        {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-            IncludeSubdirectories = false,
-            EnableRaisingEvents = true,
-        };
-        this._watcher.Created += this.OnFileSystemChanged;
-        this._watcher.Deleted += this.OnFileSystemChanged;
-        this._watcher.Renamed += this.OnFileSystemChanged;
-        this._watcher.Changed += this.OnFileSystemChanged;
+    internal RecentItemsFolderSource(string folderPath)
+    {
+        this._folderPath = folderPath;
+        this._watcher = new(folderPath, "Recent folder", () => this.Changed?.Invoke(this, EventArgs.Empty),
+            ShortcutFileSearchPattern, fileChanges: NotifyFilters.FileName | NotifyFilters.LastWrite);
     }
 
     public event EventHandler? Changed;
 
     public IReadOnlyList<IRecentFile> GetRecentFiles(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
+        if (!this._watcher.Refresh())
         {
+            this._shellLinksHelper.PruneCache([]);
             return Array.Empty<IRecentFile>();
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var shortcuts = new DirectoryInfo(this._folderPath)
-            .GetFiles(ShortcutFileSearchPattern, SearchOption.TopDirectoryOnly)
-            .OrderByDescending(static file => file.LastWriteTimeUtc);
+        var files = new DirectoryInfo(this._folderPath).GetFiles(ShortcutFileSearchPattern, SearchOption.TopDirectoryOnly);
+        this._shellLinksHelper.PruneCache(files);
+        var shortcuts = files.OrderByDescending(static file => file.LastWriteTimeUtc);
 
         var items = new List<IRecentFile>();
         var addedTargetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -84,7 +76,7 @@ internal sealed partial class RecentItemsFolderSource : IRecentFileSource
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Failed to process recent shortcut {fileInfo.FullName}", ex);
+                Logger.LogError($"Failed to process a recent shortcut {ExceptionDiagnostics.Format(ex)}");
             }
         }
 
@@ -92,29 +84,5 @@ internal sealed partial class RecentItemsFolderSource : IRecentFileSource
         return items;
     }
 
-    private void OnFileSystemChanged(object sender, FileSystemEventArgs e)
-    {
-        if (!this._isDisposed)
-        {
-            this.Changed?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    public void Dispose()
-    {
-        if (this._isDisposed)
-        {
-            return;
-        }
-
-        this._isDisposed = true;
-        if (this._watcher is not null)
-        {
-            this._watcher.Created -= this.OnFileSystemChanged;
-            this._watcher.Deleted -= this.OnFileSystemChanged;
-            this._watcher.Renamed -= this.OnFileSystemChanged;
-            this._watcher.Changed -= this.OnFileSystemChanged;
-            this._watcher.Dispose();
-        }
-    }
+    public void Dispose() => this._watcher.Dispose();
 }

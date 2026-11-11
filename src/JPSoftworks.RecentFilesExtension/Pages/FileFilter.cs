@@ -55,16 +55,16 @@ internal sealed partial class LocationFilter : Filter
 
         try
         {
-            PInvoke.SHGetKnownFolderPath(
+            var result = PInvoke.SHGetKnownFolderPath(
                     folderId,
                     KNOWN_FOLDER_FLAG.KF_FLAG_DEFAULT | KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY,
                     null,
-                    out path)
-                .ThrowOnFailure();
+                    out path);
 
-            if (path == null)
+            if (result.Failed || path == null)
             {
-                throw new InvalidOperationException($"Known folder {folderId} returned no path.");
+                Logger.LogWarning($"Unable to resolve known folder {folderId}: HRESULT 0x{result.Value:X8}");
+                return string.Empty;
             }
 
             return path.ToString();

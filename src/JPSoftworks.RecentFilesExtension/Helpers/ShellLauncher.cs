@@ -4,6 +4,7 @@
 // 
 // ------------------------------------------------------------
 
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -14,12 +15,12 @@ namespace JPSoftworks.RecentFilesExtension.Helpers;
 
 internal static class ShellLauncher
 {
-    internal static unsafe bool OpenWith(string filename)
+    internal static unsafe void OpenWith(string filename)
     {
-        var filenamePtr = Marshal.StringToHGlobalUni(filename);
-        var verbPtr = Marshal.StringToHGlobalUni("openas");
+        ArgumentException.ThrowIfNullOrWhiteSpace(filename);
 
-        try
+        fixed (char* filenamePtr = filename)
+        fixed (char* verbPtr = "openas")
         {
             var filenamePCWSTR = new PCWSTR((char*)filenamePtr);
             var verbPCWSTR = new PCWSTR((char*)verbPtr);
@@ -33,12 +34,10 @@ internal static class ShellLauncher
                 fMask = 12 //SEEMASKINVOKEIDLIST,
             };
 
-            return PInvoke.ShellExecuteEx(ref info);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(filenamePtr);
-            Marshal.FreeHGlobal(verbPtr);
+            if (!PInvoke.ShellExecuteEx(ref info))
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
         }
     }
 }

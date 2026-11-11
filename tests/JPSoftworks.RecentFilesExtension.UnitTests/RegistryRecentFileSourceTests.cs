@@ -7,6 +7,8 @@
 using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Sources;
 using Microsoft.Win32;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace JPSoftworks.RecentFilesExtension.UnitTests;
 
@@ -14,16 +16,58 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 public sealed class RegistryRecentFileSourceTests
 {
     [TestMethod]
+    [DataRow(@"OpenSaveMRU\blocked")]
+    [DataRow(@"OpenSavePidlMRU\blocked")]
+    public void UnreadableOpenSaveKeyDoesNotHideReadableEntries(string blockedPath)
+    {
+        var path = $@"Software\RecentFilesExtension.Tests.{Guid.NewGuid():N}";
+        try
+        {
+            using var root = Registry.CurrentUser.CreateSubKey(path);
+            using var readable = root.CreateSubKey(@"OpenSaveMRU\txt");
+            readable.SetValue("a", "https://example.invalid/readable.txt");
+            readable.SetValue("MRUList", "a");
+            using var blocked = root.CreateSubKey(blockedPath);
+            var descriptor = blocked.GetAccessControl().GetSecurityDescriptorBinaryForm();
+            var denied = blocked.GetAccessControl();
+            using var identity = WindowsIdentity.GetCurrent();
+            denied.AddAccessRule(new RegistryAccessRule(identity.User!, RegistryRights.ReadKey, AccessControlType.Deny));
+            try
+            {
+                blocked.SetAccessControl(denied);
+                using var source = new OpenSaveMruSource(path);
+                Assert.AreEqual("https://example.invalid/readable.txt", source.GetRecentFiles(CancellationToken.None).Single().TargetPath);
+            }
+            finally
+            {
+                var restored = new RegistrySecurity();
+                restored.SetSecurityDescriptorBinaryForm(descriptor, AccessControlSections.Access);
+                blocked.SetAccessControl(restored);
+            }
+            using var deleted = root.CreateSubKey("deleted");
+            root.DeleteSubKeyTree("deleted");
+            var items = new List<IRecentFile>();
+            OpenSaveMruSource.ReadMruKey(readable, isPidl: false, items);
+            OpenSaveMruSource.ReadMruKey(deleted, isPidl: false, items);
+            Assert.AreEqual("https://example.invalid/readable.txt", items.Single().TargetPath);
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
+        }
+    }
+
+    [TestMethod]
     public void OpenSaveMruDatesOnlyNewestEntryAndPreservesKnownRecency()
     {
         var registryPath = $@"Software\RecentFilesExtension.Tests.{Guid.NewGuid():N}";
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(registryPath);
-            key.SetValue("a", @"C:\Documents\New.txt");
-            key.SetValue("b", @"C:\Documents\Old.txt");
-            key.SetValue("c", @"C:\Documents\HistoryOnly.txt");
-            key.SetValue("d", @"C:\Documents\OlderHistoryOnly.txt");
+            key.SetValue("a", @"\\recent-files-tests.invalid\Documents\New.txt");
+            key.SetValue("b", @"\\recent-files-tests.invalid\Documents\Old.txt");
+            key.SetValue("c", @"\\recent-files-tests.invalid\Documents\HistoryOnly.txt");
+            key.SetValue("d", @"\\recent-files-tests.invalid\Documents\OlderHistoryOnly.txt");
             key.SetValue("MRUList", "abcd");
             var keyTime = NativeRegistryMethods.GetLastWriteTimeUtc(key);
             Assert.IsNotNull(keyTime);
@@ -37,14 +81,14 @@ public sealed class RegistryRecentFileSourceTests
             Assert.AreEqual(keyTime, NativeRegistryMethods.GetLastWriteTimeUtc(key));
 
             var now = DateTimeOffset.UtcNow;
-            var oldFile = new RecentPathFile(@"C:\Documents\Old.txt", now.AddDays(-14));
-            var yesterday = new RecentPathFile(@"C:\Documents\Yesterday.pdf", now.AddDays(-1));
+            var oldFile = new RecentPathFile(@"\\recent-files-tests.invalid\Documents\Old.txt", now.AddDays(-14));
+            var yesterday = new RecentPathFile(@"\\recent-files-tests.invalid\Documents\Yesterday.pdf", now.AddDays(-1));
             using var historySource = new StubSource([.. history]);
             using var knownSource = new StubSource(oldFile, yesterday);
             using var composite = new CompositeRecentFileSource(
             [
-                new(historySource, static () => true),
-                new(knownSource, static () => true),
+                new(() => historySource, static () => true),
+                new(() => knownSource, static () => true),
             ]);
 
             var files = composite.GetRecentFiles(CancellationToken.None);
@@ -52,11 +96,11 @@ public sealed class RegistryRecentFileSourceTests
             CollectionAssert.AreEqual(
                 new[]
                 {
-                    @"C:\Documents\New.txt",
+                    @"\\recent-files-tests.invalid\Documents\New.txt",
                     yesterday.TargetPath,
                     oldFile.TargetPath,
-                    @"C:\Documents\HistoryOnly.txt",
-                    @"C:\Documents\OlderHistoryOnly.txt",
+                    @"\\recent-files-tests.invalid\Documents\HistoryOnly.txt",
+                    @"\\recent-files-tests.invalid\Documents\OlderHistoryOnly.txt",
                 },
                 files.Select(static file => file.TargetPath).ToArray());
             Assert.AreSame(oldFile, files[2]);

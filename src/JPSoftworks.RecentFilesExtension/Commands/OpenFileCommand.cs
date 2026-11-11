@@ -4,7 +4,6 @@
 // 
 // ------------------------------------------------------------
 
-using System.ComponentModel;
 using System.Diagnostics;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
@@ -35,9 +34,10 @@ internal sealed partial class OpenFileCommand : InvokableCommand
             {
                 process.Start();
             }
-            catch (Win32Exception ex)
+            catch (Exception ex)
             {
-                Logger.LogError($"Unable to open {this._item.FullPath}", ex);
+                Logger.LogError($"Unable to open the recent file {ExceptionDiagnostics.Format(ex)}");
+                return CommandResult.KeepOpen();
             }
         }
 

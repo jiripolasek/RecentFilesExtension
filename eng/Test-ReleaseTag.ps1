@@ -20,7 +20,7 @@ $configPath = New-TestWorkflowRepository -Directory $testRoot
 Copy-Item -LiteralPath $configPath -Destination $engRoot
 (Get-Content -LiteralPath (Join-Path $testRoot 'CmdPal.Extension.props') -Raw).Replace("::NormalizeDirectory('`$(MSBuildThisFileDirectory)')", "::NormalizeDirectory('`$(MSBuildThisFileDirectory)', '..')") |
     Set-Content -LiteralPath (Join-Path $engRoot 'CmdPal.Extension.props')
-foreach ($name in @('Get-WorkflowConfig.ps1', 'Get-ReleaseVersion.ps1', 'Get-PackageConfig.ps1', 'Get-MSBuildEvaluation.ps1', 'Get-DotNetVersion.ps1')) {
+foreach ($name in @('Get-WorkflowConfig.ps1', 'Get-ReleaseVersion.ps1', 'Get-ReleaseNotes.ps1', 'Get-PackageConfig.ps1', 'Get-MSBuildEvaluation.ps1', 'Get-DotNetVersion.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $engRoot
 }
 $manifestPath = Join-Path $testRoot 'Package.appxmanifest'
@@ -38,6 +38,7 @@ function Reset-TestCase([string] $Version = '0.4.0.0', [string] $Tag = 'v0.4.0')
     $env:GITHUB_STEP_SUMMARY = Join-Path $testRoot 'summary.md'
     Set-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
     Set-Content -LiteralPath $manifestPath -Value $manifestTemplate.Replace('0.4.0.0', $Version)
+    Set-Content -LiteralPath (Join-Path $testRoot 'CHANGELOG.md') -Value "## [$($Tag.TrimStart('v'))] - Unreleased`n`nTest release notes."
     $script:state = @{
         Tag = $Tag; Refs = @(); Calls = [Collections.Generic.List[string]]::new()
         ListExitCode = 0; CreateExitCode = 0; DispatchExitCode = 0
@@ -113,6 +114,13 @@ try {
     Assert-Rejected 'Unable to check'
     if ($state.Calls -join ',' -ne 'list') { throw 'Tag lookup failure must stop before creating a tag.' }
 
+    foreach ($notes in @('# Changelog', "## [0.4.0] - Unreleased`n`n")) {
+        Reset-TestCase
+        Set-Content -LiteralPath (Join-Path $testRoot 'CHANGELOG.md') -Value $notes
+        Assert-Rejected 'No release notes found'
+        if ($state.Calls.Count -ne 0) { throw 'Missing release notes must stop before any GitHub call.' }
+    }
+
     Reset-TestCase
     $state.CreateExitCode = 1
     Assert-Rejected 'Unable to create'
@@ -123,7 +131,7 @@ try {
     Assert-Rejected "Run Release manually on 'v0.4.0'"
     if ($state.Calls -join ',' -ne 'list,create,dispatch') { throw 'A dispatch failure must preserve the created tag.' }
 
-    Write-Output 'Passed release tagging checks for manifest versions, release dispatch, existing tags, prefix matches, branch selection, and API failures.'
+    Write-Output 'Passed release tagging checks for manifest versions, release notes, release dispatch, existing tags, prefix matches, branch selection, and API failures.'
 }
 finally {
     Pop-Location

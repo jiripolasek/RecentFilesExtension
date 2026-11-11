@@ -10,8 +10,65 @@ using Microsoft.CommandPalette.Extensions.Toolkit;
 namespace JPSoftworks.RecentFilesExtension.UnitTests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class SettingsManagerTests
 {
+    [TestMethod]
+    [DataRow("{invalid json")]
+    [DataRow("[]")]
+    public void MalformedSettingsAreLoggedAndPreservedBeforeRecovery(string contents)
+    {
+        using var logs = new TestLogCapture();
+        var folder = Directory.CreateTempSubdirectory("RecentFilesSettings-").FullName;
+        try
+        {
+            var path = Path.Combine(folder, "settings.json");
+            File.WriteAllText(path, contents);
+            var settings = new SettingsManager(path);
+            Assert.AreEqual("list", settings.ViewMode);
+            logs.AssertLogged("Failed to load settings");
+
+            settings.ViewMode = "gallery";
+            logs.AssertLogged("Invalid settings preserved");
+            Assert.AreEqual(contents, File.ReadAllText(Directory.GetFiles(folder, "*.corrupt").Single()));
+            Assert.AreEqual("gallery", new SettingsManager(path).ViewMode);
+            Assert.IsEmpty(Directory.GetFiles(folder, "*.tmp"));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void FailedReplacementKeepsThePreviousSettingsAndLogsTheError()
+    {
+        using var logs = new TestLogCapture();
+        var folder = Directory.CreateTempSubdirectory("RecentFilesSettings-").FullName;
+        var path = Path.Combine(folder, "settings.json");
+        const string original = """{"unknown":"preserve me","jpsoftworks.recentfiles.Appearance.ViewMode":"list"}""";
+        try
+        {
+            File.WriteAllText(path, original);
+            var settings = new SettingsManager(path);
+            File.SetAttributes(path, FileAttributes.ReadOnly);
+            settings.ViewMode = "gallery";
+            logs.AssertLogged("Failed to save settings");
+            Assert.AreEqual(original, File.ReadAllText(path));
+            Assert.IsEmpty(Directory.GetFiles(folder, "*.tmp"));
+
+            File.SetAttributes(path, FileAttributes.Normal);
+            settings.SaveSettings();
+            Assert.AreEqual("gallery", new SettingsManager(path).ViewMode);
+            StringAssert.Contains(File.ReadAllText(path), "\"unknown\":\"preserve me\"");
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
     [TestMethod]
     public void AppearanceSettingsKeepDefaultsAndPersistWithoutRefreshingSources()
     {

@@ -13,7 +13,7 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 
 internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 {
-    private static readonly TimeSpan RefreshDebounceInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan RefreshDelay = TimeSpan.FromMilliseconds(500);
     private readonly IRecentFileSource _source;
     private bool _first = true;
 
@@ -25,7 +25,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
     private bool _isRefreshInProgress;
     private bool _isDisposed;
 
-    private readonly System.Timers.Timer _reloadTimer = new(RefreshDebounceInterval) { AutoReset = false };
+    private readonly System.Timers.Timer _reloadTimer = new(RefreshDelay) { AutoReset = false };
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly CancellationToken _cancellationToken;
 
@@ -97,7 +97,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, this._cancellationToken);
 
-        var tcs = new TaskCompletionSource<bool>();
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         void OnInitialLoadComplete(object? sender, EventArgs e)
         {
@@ -148,31 +148,35 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
         {
             await Task.Run(this.RefreshCache, this._cancellationToken);
             this._cancellationToken.ThrowIfCancellationRequested();
-
-            int itemCount;
-            lock (this._syncRoot)
-            {
-                this._isInitialLoadComplete = true;
-                itemCount = this._cachedRecentFiles.Count;
-            }
-
-            Logger.LogDebug($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
-            this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
         {
             Logger.LogDebug($"Initial cache load canceled after {stopwatch.ElapsedMilliseconds}ms");
+            return;
         }
         catch (Exception ex)
         {
-            Logger.LogError($"Failed to complete initial cache load after {stopwatch.ElapsedMilliseconds}ms", ex);
+            Logger.LogError($"Failed to complete initial cache load after {stopwatch.ElapsedMilliseconds}ms {ExceptionDiagnostics.Format(ex)}");
+        }
 
-            lock (this._syncRoot)
+        int itemCount;
+        lock (this._syncRoot)
+        {
+            this._isInitialLoadComplete = true;
+            itemCount = this._cachedRecentFiles.Count;
+        }
+
+        Logger.LogDebug($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
+        foreach (EventHandler handler in this.InitialLoadComplete?.GetInvocationList() ?? [])
+        {
+            try
             {
-                this._isInitialLoadComplete = true;
+                handler(this, EventArgs.Empty);
             }
-
-            this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to notify a subscriber that initial loading completed {ExceptionDiagnostics.Format(ex)}");
+            }
         }
     }
 
@@ -185,7 +189,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
                 return;
             }
 
-            this.RestartReloadTimer();
+            this.ScheduleReload();
         }
     }
 
@@ -198,16 +202,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
 
         try
         {
-            List<IRecentFile> newList;
-            try
-            {
-                newList = [.. this._source.GetRecentFiles(this._cancellationToken)];
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Failed to reload recent files", ex);
-                return;
-            }
+            List<IRecentFile> newList = [.. this._source.GetRecentFiles(this._cancellationToken)];
 
             if (this._cancellationToken.IsCancellationRequested)
             {
@@ -220,7 +215,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
                 var stopwatch = Stopwatch.StartNew();
                 changed = !HaveSameItems(newList, this._cachedRecentFiles);
 
-                Logger.LogDebug($"Refresh 30 | Cache updated: {changed}, took {stopwatch.ElapsedMilliseconds}ms");
+                Logger.LogDebug($"Recent files refreshed | Cache updated: {changed}, took {stopwatch.ElapsedMilliseconds}ms");
                 stopwatch.Stop();
 
                 if (changed)
@@ -234,6 +229,15 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
                 this._first = false;
                 this.RecentFilesChanged?.Invoke(null, [.. newList]);
             }
+        }
+        catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
+        {
+            // Disposing the provider cancels the current refresh.
+        }
+        catch (Exception ex)
+        {
+            this._first = true;
+            Logger.LogError($"Failed to refresh recent files or notify subscribers {ExceptionDiagnostics.Format(ex)}");
         }
         finally
         {
@@ -252,7 +256,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
 
             if (this._isRefreshInProgress)
             {
-                this.RestartReloadTimer();
+                this.ScheduleReload();
                 return false;
             }
 
@@ -261,10 +265,12 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
         }
     }
 
-    private void RestartReloadTimer()
+    private void ScheduleReload()
     {
-        this._reloadTimer.Stop();
-        this._reloadTimer.Start();
+        if (!this._reloadTimer.Enabled)
+        {
+            this._reloadTimer.Start();
+        }
     }
 
     private void EndRefresh()
@@ -287,13 +293,21 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
             var firstItem = first[i];
             var secondItem = second[i];
 
-            if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
-                !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
-                !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
-                !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
-                firstItem.IsDirectory() != secondItem.IsDirectory() ||
-                firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
+            try
             {
+                if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
+                    !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
+                    !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
+                    !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
+                    firstItem.IsDirectory() != secondItem.IsDirectory() ||
+                    firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
+                {
+                    return false;
+                }
+            }
+            catch
+            {
+                // Unreadable metadata is not evidence that the cached snapshot is still current.
                 return false;
             }
         }

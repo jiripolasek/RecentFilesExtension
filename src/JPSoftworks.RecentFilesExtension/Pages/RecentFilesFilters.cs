@@ -12,15 +12,12 @@ namespace JPSoftworks.RecentFilesExtension.Pages;
 internal sealed partial class RecentFilesFilters : Filters
 {
     private const string EverythingFilterId = "Everything";
+    private readonly IFilterItem[] _filters;
 
     public RecentFilesFilters()
     {
         this.CurrentFilterId = EverythingFilterId;
-    }
-
-    public override IFilterItem[] GetFilters()
-    {
-        return
+        IFilterItem[] filters =
         [
             new FileFilter
             {
@@ -190,5 +187,9 @@ internal sealed partial class RecentFilesFilters : Filters
                 Icon = Icons.Filters.UserProfileFolder, Name = "User Profile folder"
             }
         ];
+        this._filters = [.. filters.Where(static filter =>
+            filter is not LocationFilter location || !string.IsNullOrWhiteSpace(location.Location))];
     }
+
+    public override IFilterItem[] GetFilters() => this._filters;
 }

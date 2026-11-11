@@ -66,7 +66,7 @@ internal sealed partial class ShellLinkComObject : IDisposable
             }
             catch
             {
-                (shellLink as IDisposable)?.Dispose();
+                ((ComObject)(object)shellLink).FinalRelease();
                 throw;
             }
         }
@@ -91,7 +91,7 @@ internal sealed partial class ShellLinkComObject : IDisposable
 
         try
         {
-            (comObject as IDisposable)?.Dispose();
+            ((ComObject)comObject).FinalRelease();
         }
         finally
         {

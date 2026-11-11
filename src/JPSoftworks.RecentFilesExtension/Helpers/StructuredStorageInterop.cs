@@ -106,7 +106,7 @@ internal sealed partial class StructuredStorageFile : IDisposable
         }
         finally
         {
-            (stream as IDisposable)?.Dispose();
+            ((ComObject)(object)stream).FinalRelease();
         }
     }
 
@@ -120,7 +120,7 @@ internal sealed partial class StructuredStorageFile : IDisposable
 
         try
         {
-            (storageObject as IDisposable)?.Dispose();
+            ((ComObject)storageObject).FinalRelease();
         }
         finally
         {

@@ -17,6 +17,97 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 public sealed class RecentFilesAppearanceTests
 {
     [TestMethod]
+    public void LocationFiltersMatchNormalizedForwardSlashPaths()
+    {
+        var file = new RecentPathFile("C:/Users/example/Documents/report%41.docx", DateTimeOffset.UtcNow);
+        using var loader = new RecentFilesLoader(new StubProvider(file));
+        var token = Guid.NewGuid();
+        loader.Restart(new(string.Empty, [], [], @"C:\Users\example\Documents", false), token);
+
+        Assert.AreEqual("report%41.docx", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual(@"C:\Users\example\Documents\report%41.docx", file.TargetPath);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void InvalidWildcardUpdatesResultsAndFinishesLoading(bool initiallyLoaded)
+    {
+        var files = Enumerable.Range(1, 25)
+            .Select(index => new RecentPathFile($"https://example.invalid/report{index}.txt", DateTimeOffset.UtcNow))
+            .ToArray();
+        var provider = new StubProvider(files) { IsInitialLoadComplete = initiallyLoaded };
+        using var page = new RecentFilesExtensionPage(new TestRecentFilesSettings(), provider);
+        if (initiallyLoaded)
+        {
+            Assert.HasCount(20, page.GetItems());
+            Assert.IsTrue(page.HasMoreItems);
+        }
+        else
+        {
+            Assert.IsTrue(page.IsLoading);
+        }
+
+        var notifications = 0;
+        page.ItemsChanged += (_, _) => notifications++;
+        page.SearchText = "*[a-]";
+        page.UpdateSearchText(string.Empty, page.SearchText);
+        if (!initiallyLoaded)
+        {
+            provider.CompleteInitialization();
+        }
+
+        Assert.IsEmpty(page.GetItems());
+        Assert.IsFalse(page.HasMoreItems);
+        Assert.IsFalse(page.IsLoading);
+        Assert.IsTrue(notifications > 0);
+        page.LoadMore();
+        Assert.IsEmpty(page.GetItems());
+        provider.RaiseChanged();
+        Assert.IsEmpty(page.GetItems());
+
+        page.SearchText = "report21.txt";
+        page.UpdateSearchText("*[a-]", page.SearchText);
+        Assert.AreEqual("report21.txt", page.GetItems().Single().Title);
+        Assert.IsFalse(page.IsLoading);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public void UnavailableKnownFoldersAreLoggedWithoutBreakingFilters()
+    {
+        using var logs = new TestLogCapture();
+        var missing = new LocationFilter("missing", Guid.Empty);
+        Assert.AreEqual(string.Empty, missing.Location);
+        logs.AssertLogged("Unable to resolve known folder");
+
+        var filterProvider = new RecentFilesFilters();
+        var filters = filterProvider.GetFilters();
+        Assert.AreSame(filters, filterProvider.GetFilters());
+        Assert.IsTrue(filters.OfType<LocationFilter>().All(static filter => !string.IsNullOrWhiteSpace(filter.Location)));
+        Assert.IsTrue(filters.OfType<FileFilter>().Any(static filter => filter.Id == "Everything"));
+    }
+
+    [TestMethod]
+    [DataRow("Report%20one.docx", "documents", "DOCX")]
+    [DataRow("Sheet.xlsx", "documents", "XLSX")]
+    [DataRow("Makefile", "projects", null)]
+    public void TypeFiltersMatchCloudFilesWithQueryStrings(string fileName, string filterId, string? expectedTag)
+    {
+        var settings = new TestRecentFilesSettings { ShowFileTypeTags = true };
+        var file = new RecentPathFile($"https://example.invalid/{fileName}?web=1#section", DateTimeOffset.UtcNow);
+        using var page = new RecentFilesExtensionPage(settings, new StubProvider(file));
+        var filters = Assert.IsInstanceOfType<RecentFilesFilters>(page.Filters);
+        filters.CurrentFilterId = filterId;
+        var item = page.GetItems().Single();
+        Assert.AreEqual(file.DisplayName, item.Title);
+        if (expectedTag is not null)
+        {
+            Assert.AreEqual(expectedTag, item.Tags.Single().Text);
+        }
+    }
+
+    [TestMethod]
     [DataRow(@"\\recent-files-unavailable.invalid\share")]
     [DataRow(@"\\?\UNC\recent-files-unavailable.invalid\share")]
     public async Task UnavailableNetworkTargetsDoNotBlockLoadingOrAppearanceChangesAsync(string share)
@@ -208,15 +299,23 @@ public sealed class RecentFilesAppearanceTests
 
     private sealed class StubProvider(params IRecentFile[] files) : IRecentFilesProvider
     {
-        public event EventHandler<IList<IRecentFile>>? RecentFilesChanged { add { } remove { } }
+        public event EventHandler<IList<IRecentFile>>? RecentFilesChanged;
 
-        public event EventHandler? InitialLoadComplete { add { } remove { } }
+        public event EventHandler? InitialLoadComplete;
 
-        public bool IsInitialLoadComplete => true;
+        public bool IsInitialLoadComplete { get; set; } = true;
 
         public IList<IRecentFile> GetRecentFiles() => [.. files];
 
         public Task<bool> WaitForInitialLoadAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
+            => Task.FromResult(this.IsInitialLoadComplete);
+
+        public void CompleteInitialization()
+        {
+            this.IsInitialLoadComplete = true;
+            this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void RaiseChanged() => this.RecentFilesChanged?.Invoke(this, files);
     }
 }

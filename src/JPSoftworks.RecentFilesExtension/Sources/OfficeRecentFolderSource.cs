@@ -5,8 +5,11 @@
 // ------------------------------------------------------------
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Pages;
+
+using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension.Sources;
 
@@ -15,9 +18,10 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
     private const int MaximumInternetShortcutSize = 64 * 1024;
 
     private readonly CachedShellLinksHelper _shellLinksHelper = new();
-    private readonly FileSystemWatcher? _watcher;
+    private readonly Dictionary<string, (DateTime LastWriteTime, string Target)> _internetShortcuts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _failedEntries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly RecentFolderWatcher _watcher;
     private readonly string _folderPath;
-    private bool _isDisposed;
 
     public OfficeRecentFolderSource()
         : this(GetOfficeRecentFolderPath())
@@ -27,44 +31,39 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
     internal OfficeRecentFolderSource(string folderPath)
     {
         this._folderPath = folderPath;
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
-        {
-            return;
-        }
-
-        this._watcher = new(this._folderPath)
-        {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-            IncludeSubdirectories = false,
-            EnableRaisingEvents = true,
-        };
-        this._watcher.Created += this.OnFileSystemChanged;
-        this._watcher.Deleted += this.OnFileSystemChanged;
-        this._watcher.Renamed += this.OnFileSystemChanged;
-        this._watcher.Changed += this.OnFileSystemChanged;
-        this._watcher.Error += this.OnWatcherError;
+        this._watcher = new(folderPath, "Office Recent folder", () => this.Changed?.Invoke(this, EventArgs.Empty),
+            acceptName: IsSupportedFileName);
     }
 
     public event EventHandler? Changed;
 
     public IReadOnlyList<IRecentFile> GetRecentFiles(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
+        if (!this._watcher.Refresh())
         {
+            this._shellLinksHelper.PruneCache([]);
+            this._internetShortcuts.Clear();
+            this._failedEntries.Clear();
             return Array.Empty<IRecentFile>();
         }
 
         var stopwatch = Stopwatch.StartNew();
         var items = new List<IRecentFile>();
-        foreach (var file in new DirectoryInfo(this._folderPath)
-                     .GetFiles("*", SearchOption.TopDirectoryOnly)
-                     .OrderByDescending(static item => item.LastWriteTimeUtc))
+        var files = new DirectoryInfo(this._folderPath).GetFiles("*", SearchOption.TopDirectoryOnly);
+        this._shellLinksHelper.PruneCache(files);
+        var cachedPaths = this._internetShortcuts.Keys.Concat(this._failedEntries.Keys);
+        foreach (var path in cachedPaths.Except(files.Select(static file => file.FullName), StringComparer.OrdinalIgnoreCase).ToArray())
+        {
+            this._internetShortcuts.Remove(path);
+            this._failedEntries.Remove(path);
+        }
+        foreach (var file in files.OrderByDescending(static item => item.LastWriteTimeUtc))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 if (file.Extension.Equals(".url", StringComparison.OrdinalIgnoreCase) &&
-                    TryReadInternetShortcut(file, out var target))
+                    this.TryReadInternetShortcut(file, out var target))
                 {
                     items.Add(OfficeApplications.CreateRecentFile(
                         target,
@@ -75,10 +74,15 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
                 {
                     items.Add(shortcut);
                 }
+                this._failedEntries.Remove(file.FullName);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                Logger.LogWarning($"Failed to read an Office Recent entry: {ex.Message}");
+                if (!this._failedEntries.TryGetValue(file.FullName, out var timestamp) || timestamp != file.LastWriteTimeUtc)
+                {
+                    this._failedEntries[file.FullName] = file.LastWriteTimeUtc;
+                    Logger.LogWarning($"Failed to read an Office Recent entry {ExceptionDiagnostics.Format(ex)}");
+                }
             }
         }
 
@@ -86,7 +90,7 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
             .OrderByDescending(static item => item.LastUsedTimeUtc)
             .DistinctBy(
                 static item => RecentFilePath.GetDeduplicationKey(item.TargetPath),
-                StringComparer.OrdinalIgnoreCase)
+                StringComparer.Ordinal)
             .ToArray();
         Logger.LogDebug($"Loaded {result.Length} Office Recent folder items in {stopwatch.ElapsedMilliseconds}ms");
         return result;
@@ -119,16 +123,25 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
         return false;
     }
 
-    private static bool TryReadInternetShortcut(FileInfo file, out string target)
+    private bool TryReadInternetShortcut(FileInfo file, out string target)
     {
         target = string.Empty;
-        file.Refresh();
         if (!file.Exists || file.Length is <= 0 or > MaximumInternetShortcutSize)
         {
+            this._internetShortcuts.Remove(file.FullName);
             return false;
         }
 
-        return TryParseInternetShortcut(File.ReadLines(file.FullName), out target);
+        var timestamp = file.LastWriteTimeUtc;
+        if (this._internetShortcuts.TryGetValue(file.FullName, out var cached) && cached.LastWriteTime == timestamp)
+        {
+            target = cached.Target;
+            return target.Length > 0;
+        }
+
+        var parsed = TryParseInternetShortcut(File.ReadLines(file.FullName), out target);
+        this._internetShortcuts[file.FullName] = (timestamp, target);
+        return parsed;
     }
 
     private static string GetOfficeRecentFolderPath()
@@ -146,43 +159,5 @@ internal sealed partial class OfficeRecentFolderSource : IRecentFileSource
                string.Equals(extension, ".lnk", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void OnFileSystemChanged(object sender, FileSystemEventArgs e)
-    {
-        if (this._isDisposed ||
-            (!IsSupportedFileName(e.Name) &&
-             (e is not RenamedEventArgs renamed || !IsSupportedFileName(renamed.OldName))))
-        {
-            return;
-        }
-
-        this.Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void OnWatcherError(object sender, ErrorEventArgs e)
-    {
-        if (!this._isDisposed)
-        {
-            Logger.LogError("Office Recent folder watcher reported an error", e.GetException());
-            this.Changed?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    public void Dispose()
-    {
-        if (this._isDisposed)
-        {
-            return;
-        }
-
-        this._isDisposed = true;
-        if (this._watcher is not null)
-        {
-            this._watcher.Created -= this.OnFileSystemChanged;
-            this._watcher.Deleted -= this.OnFileSystemChanged;
-            this._watcher.Renamed -= this.OnFileSystemChanged;
-            this._watcher.Changed -= this.OnFileSystemChanged;
-            this._watcher.Error -= this.OnWatcherError;
-            this._watcher.Dispose();
-        }
-    }
+    public void Dispose() => this._watcher.Dispose();
 }

@@ -4,8 +4,13 @@
 //
 // ------------------------------------------------------------
 
+using System.Security;
 using Microsoft.Win32;
 using JPSoftworks.RecentFilesExtension.Model;
+
+using JPSoftworks.RecentFilesExtension.Helpers;
+
+using static JPSoftworks.RecentFilesExtension.Sources.RegistryReadHelper;
 
 namespace JPSoftworks.RecentFilesExtension.Sources;
 
@@ -15,17 +20,20 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
     private const string LegacyMruKeyName = "OpenSaveMRU";
     private const string PidlMruKeyName = "OpenSavePidlMRU";
 
-    private readonly RegistryChangeWatcher[] _watchers;
+    private readonly string _commonDialogPath;
+    private readonly RegistryChangeWatcher _watcher;
     private bool _isDisposed;
 
     public OpenSaveMruSource()
+        : this(CommonDialogPath)
     {
-        this._watchers = [.. RegistryViews.Supported.Select(
-            view => new RegistryChangeWatcher(CommonDialogPath, view))];
-        foreach (var watcher in this._watchers)
-        {
-            watcher.Changed += this.OnRegistryChanged;
-        }
+    }
+
+    internal OpenSaveMruSource(string commonDialogPath)
+    {
+        this._commonDialogPath = commonDialogPath;
+        this._watcher = new(commonDialogPath, RegistryView.Default);
+        this._watcher.Changed += this.OnRegistryChanged;
     }
 
     public event EventHandler? Changed;
@@ -33,16 +41,11 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
     public IReadOnlyList<IRecentFile> GetRecentFiles(CancellationToken cancellationToken)
     {
         List<IRecentFile> items = [];
-        foreach (var view in RegistryViews.Supported)
+        cancellationToken.ThrowIfCancellationRequested();
+        using var hive = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var commonDialog = OpenReadableKey(hive, this._commonDialogPath);
+        if (commonDialog is not null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            using var hive = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
-            using var commonDialog = hive.OpenSubKey(CommonDialogPath);
-            if (commonDialog is null)
-            {
-                continue;
-            }
-
             ReadMruTree(commonDialog, LegacyMruKeyName, isPidl: false, items, cancellationToken);
             ReadMruTree(commonDialog, PidlMruKeyName, isPidl: true, items, cancellationToken);
         }
@@ -51,7 +54,7 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
             .OrderByDescending(static item => item.LastUsedTimeUtc)
             .DistinctBy(
                 static item => RecentFilePath.GetDeduplicationKey(item.TargetPath),
-                StringComparer.OrdinalIgnoreCase)
+                StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -62,17 +65,17 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
         List<IRecentFile> items,
         CancellationToken cancellationToken)
     {
-        using var root = commonDialog.OpenSubKey(rootName);
+        using var root = OpenReadableKey(commonDialog, rootName);
         if (root is null)
         {
             return;
         }
 
         ReadMruKey(root, isPidl, items);
-        foreach (var subKeyName in root.GetSubKeyNames())
+        foreach (var subKeyName in GetReadableSubKeyNames(root))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var subKey = root.OpenSubKey(subKeyName);
+            using var subKey = OpenReadableKey(root, subKeyName);
             if (subKey is not null)
             {
                 ReadMruKey(subKey, isPidl, items);
@@ -82,8 +85,17 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
 
     internal static void ReadMruKey(RegistryKey key, bool isPidl, List<IRecentFile> items)
     {
-        var keyTime = NativeRegistryMethods.GetLastWriteTimeUtc(key) ?? DateTimeOffset.MinValue;
-        var orderedValueNames = MruListParser.GetOrderedValueNames(key);
+        DateTimeOffset keyTime;
+        IReadOnlyList<string> orderedValueNames;
+        try
+        {
+            keyTime = NativeRegistryMethods.GetLastWriteTimeUtc(key) ?? DateTimeOffset.MinValue;
+            orderedValueNames = MruListParser.GetOrderedValueNames(key);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return;
+        }
         for (var rank = 0; rank < orderedValueNames.Count; rank++)
         {
             try
@@ -113,9 +125,9 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
                 var timestamp = rank == 0 ? keyTime : DateTimeOffset.MinValue;
                 items.Add(OfficeApplications.CreateRecentFile(path, timestamp));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
             {
-                Logger.LogError("Failed to read an Open/Save MRU entry", ex);
+                Logger.LogError($"Failed to read an Open/Save MRU entry {ExceptionDiagnostics.Format(ex)}");
             }
         }
     }
@@ -136,10 +148,7 @@ internal sealed partial class OpenSaveMruSource : IRecentFileSource
         }
 
         this._isDisposed = true;
-        foreach (var watcher in this._watchers)
-        {
-            watcher.Changed -= this.OnRegistryChanged;
-            watcher.Dispose();
-        }
+        this._watcher.Changed -= this.OnRegistryChanged;
+        this._watcher.Dispose();
     }
 }

@@ -18,40 +18,31 @@ internal sealed partial class OfficeJumpListSource : IRecentFileSource
     private const int MaximumDestListSize = 16 * 1024 * 1024;
     private const int MaximumShellLinkSize = 4 * 1024 * 1024;
 
-    private readonly FileSystemWatcher? _watcher;
+    private readonly Dictionary<string, CachedDestination> _destinations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly RecentFolderWatcher _watcher;
     private readonly string _folderPath;
-    private bool _isDisposed;
+    private readonly TimeProvider _timeProvider;
 
     public OfficeJumpListSource()
+        : this(GetAutomaticDestinationsPath())
     {
-        var recentFolder = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
-        this._folderPath = string.IsNullOrWhiteSpace(recentFolder)
-            ? string.Empty
-            : Path.Combine(recentFolder, "AutomaticDestinations");
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
-        {
-            return;
-        }
+    }
 
-        this._watcher = new(this._folderPath, $"*{DestinationFileExtension}")
-        {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-            IncludeSubdirectories = false,
-            EnableRaisingEvents = true,
-        };
-        this._watcher.Created += this.OnFileSystemChanged;
-        this._watcher.Deleted += this.OnFileSystemChanged;
-        this._watcher.Renamed += this.OnFileSystemChanged;
-        this._watcher.Changed += this.OnFileSystemChanged;
-        this._watcher.Error += this.OnWatcherError;
+    internal OfficeJumpListSource(string folderPath, TimeProvider? timeProvider = null)
+    {
+        this._folderPath = folderPath;
+        this._timeProvider = timeProvider ?? TimeProvider.System;
+        this._watcher = new(folderPath, "Office Jump List", () => this.Changed?.Invoke(this, EventArgs.Empty),
+            $"*{DestinationFileExtension}", OfficeApplications.IsDestinationFileName, timeProvider: this._timeProvider);
     }
 
     public event EventHandler? Changed;
 
     public IReadOnlyList<IRecentFile> GetRecentFiles(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(this._folderPath) || !Directory.Exists(this._folderPath))
+        if (!this._watcher.Refresh())
         {
+            this._destinations.Clear();
             return Array.Empty<IRecentFile>();
         }
 
@@ -61,26 +52,65 @@ internal sealed partial class OfficeJumpListSource : IRecentFileSource
         {
             cancellationToken.ThrowIfCancellationRequested();
             var path = Path.Combine(this._folderPath, fileName);
-            if (!File.Exists(path))
+            var file = new FileInfo(path);
+            if (!file.Exists)
             {
+                this._destinations.Remove(path);
                 continue;
             }
+            var timestamp = file.LastWriteTimeUtc;
+            var sameVersion = this._destinations.TryGetValue(path, out var cached) && cached.Timestamp == timestamp;
+            var retryAfter = sameVersion ? cached.RetryAfter : null;
+            var reported = retryAfter.HasValue;
+            void ReportFailure(string diagnostic)
+            {
+                if (!reported)
+                {
+                    Logger.LogWarning($"Failed to read an Office Jump List: {diagnostic}");
+                    reported = true;
+                }
+                retryAfter ??= this._timeProvider.GetUtcNow().AddMinutes(5);
+            }
 
-            try
+            var entries = cached.Entries;
+            if (!sameVersion || (retryAfter is { } due && this._timeProvider.GetUtcNow() >= due))
             {
-                ReadDestinationFile(path, items, cancellationToken);
+                retryAfter = null;
+                entries = [];
+                try
+                {
+                    ReadDestinationFile(path, entries, ReportFailure, cancellationToken);
+                }
+                catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    ReportFailure(ExceptionDiagnostics.Format(ex));
+                    if (entries.Count == 0 && cached.Entries is { Count: > 0 })
+                    {
+                        entries = cached.Entries;
+                    }
+                }
             }
-            catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidDataException)
+
+            foreach (var entry in entries)
             {
-                Logger.LogError($"Failed to read Office Jump List {fileName}", ex);
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    items.Add(OfficeApplications.CreateRecentFile(entry.Target, entry.LastUsedTimeUtc, entry.ApplicationPath));
+                }
+                catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    ReportFailure(ExceptionDiagnostics.Format(ex));
+                }
             }
+            this._destinations[path] = new(timestamp, entries, retryAfter);
         }
 
         var result = items
             .OrderByDescending(static item => item.LastUsedTimeUtc)
             .DistinctBy(
                 static item => RecentFilePath.GetDeduplicationKey(item.TargetPath),
-                StringComparer.OrdinalIgnoreCase)
+                StringComparer.Ordinal)
             .ToArray();
         Logger.LogDebug($"Loaded {result.Length} Office Jump List items in {stopwatch.ElapsedMilliseconds}ms");
         return result;
@@ -88,7 +118,8 @@ internal sealed partial class OfficeJumpListSource : IRecentFileSource
 
     private static void ReadDestinationFile(
         string path,
-        List<IRecentFile> items,
+        List<ParsedEntry> entries,
+        Action<string> reportFailure,
         CancellationToken cancellationToken)
     {
         using var storage = StructuredStorageFile.Open(path);
@@ -110,64 +141,33 @@ internal sealed partial class OfficeJumpListSource : IRecentFileSource
                     stream =>
                     {
                         using var shellLink = new ShellLinkHelper();
-                        return shellLink.LoadTargetData(stream);
+                        return shellLink.LoadTargetData(stream, reportFailure);
                     });
                 if (OfficeJumpListTarget.TryGetTarget(targetData, out var target))
                 {
                     OfficeJumpListTarget.TryGetApplicationPath(targetData, out var applicationPath);
-                    items.Add(OfficeApplications.CreateRecentFile(
-                        target,
-                        entry.LastUsedTimeUtc,
-                        applicationPath));
+                    entries.Add(new(target, entry.LastUsedTimeUtc, applicationPath));
                 }
             }
-            catch (Exception ex) when (ex is COMException or IOException or InvalidDataException)
+            catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                Logger.LogWarning($"Failed to read an Office Jump List entry: {ex.Message}");
+                reportFailure(ExceptionDiagnostics.Format(ex));
             }
         }
     }
 
-    private void OnFileSystemChanged(object sender, FileSystemEventArgs e)
-    {
-        if (this._isDisposed ||
-            (!OfficeApplications.IsDestinationFileName(e.Name) &&
-             (e is not RenamedEventArgs renamed ||
-              !OfficeApplications.IsDestinationFileName(renamed.OldName))))
-        {
-            return;
-        }
+    private readonly record struct ParsedEntry(string Target, DateTimeOffset LastUsedTimeUtc, string ApplicationPath);
+    private readonly record struct CachedDestination(DateTime Timestamp, List<ParsedEntry> Entries, DateTimeOffset? RetryAfter);
 
-        this.Changed?.Invoke(this, EventArgs.Empty);
+    private static string GetAutomaticDestinationsPath()
+    {
+        var recentFolder = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+        return string.IsNullOrWhiteSpace(recentFolder)
+            ? string.Empty
+            : Path.Combine(recentFolder, "AutomaticDestinations");
     }
 
-    private void OnWatcherError(object sender, ErrorEventArgs e)
-    {
-        if (!this._isDisposed)
-        {
-            Logger.LogError("Office Jump List watcher reported an error", e.GetException());
-            this.Changed?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    public void Dispose()
-    {
-        if (this._isDisposed)
-        {
-            return;
-        }
-
-        this._isDisposed = true;
-        if (this._watcher is not null)
-        {
-            this._watcher.Created -= this.OnFileSystemChanged;
-            this._watcher.Deleted -= this.OnFileSystemChanged;
-            this._watcher.Renamed -= this.OnFileSystemChanged;
-            this._watcher.Changed -= this.OnFileSystemChanged;
-            this._watcher.Error -= this.OnWatcherError;
-            this._watcher.Dispose();
-        }
-    }
+    public void Dispose() => this._watcher.Dispose();
 }
 
 internal static class OfficeJumpListTarget

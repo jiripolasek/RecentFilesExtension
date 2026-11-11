@@ -69,10 +69,7 @@ internal sealed partial class RecentFileListItem : ListItem
     {
         var recentFile = this._recentFile;
         var isDirectory = recentFile.IsDirectory();
-        var fileName = Path.GetFileName(
-            Uri.TryCreate(recentFile.TargetPath, UriKind.Absolute, out var uri) && !uri.IsFile
-                ? Uri.UnescapeDataString(uri.AbsolutePath)
-                : recentFile.TargetPath);
+        var fileName = RecentFilePath.GetFileName(recentFile.TargetPath);
         var extension = isDirectory ? string.Empty : Path.GetExtension(fileName);
         if (extension.Length == fileName.Length)
         {
@@ -164,7 +161,7 @@ internal sealed partial class RecentFileListItem : ListItem
         }
         catch (Exception ex)
         {
-            Logger.LogError("Failed to load the icon.", ex);
+            Logger.LogError($"Failed to load the icon {ExceptionDiagnostics.Format(ex)}");
         }
         finally
         {
@@ -225,7 +222,7 @@ internal sealed partial class RecentFileListItem : ListItem
                 }
                 catch (Exception ex)
                 {
-                    HandleThumbnailException(ex, path);
+                    HandleThumbnailException(ex);
                 }
             }
 
@@ -238,13 +235,13 @@ internal sealed partial class RecentFileListItem : ListItem
         }
         catch (Exception ex)
         {
-            HandleThumbnailException(ex, path);
+            HandleThumbnailException(ex);
         }
 
         return null;
     }
 
-    private static void HandleThumbnailException(Exception ex, string path)
+    private static void HandleThumbnailException(Exception ex)
     {
         switch (ex)
         {
@@ -254,19 +251,19 @@ internal sealed partial class RecentFileListItem : ListItem
                 {
                     if (innerEx is COMException comEx)
                     {
-                        Logger.LogWarning($"Failed to get the icon for {path}. Error code = {comEx.ErrorCode}");
+                        Logger.LogWarning($"Failed to get the icon {ExceptionDiagnostics.Summarize(comEx)}");
                     }
                     else
                     {
-                        Logger.LogError("Failed to get the icon.", innerEx);
+                        Logger.LogError($"Failed to get the icon {ExceptionDiagnostics.Format(innerEx)}");
                     }
                 }
                 break;
             case COMException comEx:
-                Logger.LogWarning($"Failed to get the icon for {path}. Error code = {comEx.ErrorCode}");
+                Logger.LogWarning($"Failed to get the icon {ExceptionDiagnostics.Summarize(comEx)}");
                 break;
             default:
-                Logger.LogError("Failed to get the icon.", ex);
+                Logger.LogError($"Failed to get the icon {ExceptionDiagnostics.Format(ex)}");
                 break;
         }
     }

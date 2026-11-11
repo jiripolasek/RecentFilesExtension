@@ -19,12 +19,18 @@ internal static class RecentFilePath
         }
 
         var candidate = value.Trim().Trim('"').TrimEnd('\0');
+        if (Path.IsPathFullyQualified(candidate))
+        {
+            normalizedPath = candidate.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            return true;
+        }
+
         if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
         {
-            if (uri.IsFile)
+            if (uri.IsFile && Path.IsPathFullyQualified(uri.LocalPath))
             {
                 normalizedPath = uri.LocalPath;
-                return !string.IsNullOrWhiteSpace(normalizedPath);
+                return true;
             }
 
             if (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
@@ -35,13 +41,7 @@ internal static class RecentFilePath
             }
         }
 
-        if (!Path.IsPathRooted(candidate))
-        {
-            return false;
-        }
-
-        normalizedPath = candidate;
-        return true;
+        return false;
     }
 
     public static bool IsFileSystemPath(string path)
@@ -71,26 +71,13 @@ internal static class RecentFilePath
 
     public static string GetDeduplicationKey(string path)
     {
-        if (!IsFileSystemPath(path))
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && !uri.IsFile)
         {
-            if (!Uri.TryCreate(path, UriKind.Absolute, out var uri))
+            if (IsSharePointHost(uri.Host) || IsOneDriveHost(uri.Host))
             {
-                return path;
+                return GetOfficeDocumentUri(uri).GetComponents(UriComponents.AbsoluteUri, UriFormat.SafeUnescaped).ToUpperInvariant();
             }
-
-            var builder = new UriBuilder(uri)
-            {
-                Fragment = string.Empty,
-            };
-            if (IsSharePointHost(uri.Host) && !string.IsNullOrEmpty(uri.Query))
-            {
-                var queryParts = uri.Query[1..]
-                    .Split('&', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(static part => !part.Equals("web=1", StringComparison.OrdinalIgnoreCase));
-                builder.Query = string.Join('&', queryParts);
-            }
-
-            return builder.Uri.AbsoluteUri;
+            return uri.GetLeftPart(UriPartial.Query);
         }
 
         var normalizedPath = path;
@@ -111,12 +98,36 @@ internal static class RecentFilePath
         {
         }
 
-        return Path.TrimEndingDirectorySeparator(normalizedPath);
+        return Path.TrimEndingDirectorySeparator(normalizedPath).ToUpperInvariant();
+    }
+
+    public static Uri GetOfficeDocumentUri(Uri uri)
+    {
+        var builder = new UriBuilder(uri) { Fragment = string.Empty };
+        if (IsSharePointHost(uri.Host) && !string.IsNullOrEmpty(uri.Query))
+        {
+            var queryParts = uri.Query[1..]
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Where(static part => !part.Equals("web=1", StringComparison.OrdinalIgnoreCase));
+            builder.Query = string.Join('&', queryParts);
+        }
+        return builder.Uri;
     }
 
     private static bool IsSharePointHost(string host)
     {
-        return host.EndsWith(".sharepoint.com", StringComparison.OrdinalIgnoreCase);
+        return host.EndsWith(".sharepoint.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sharepoint.us", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sharepoint-mil.us", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sharepoint.cn", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sharepoint.de", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOneDriveHost(string host)
+    {
+        return host is "onedrive.live.com" or "onedrive.com" or "www.onedrive.com" or "1drv.ms" ||
+               host.EndsWith(".onedrive.live.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".docs.live.net", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string GetDisplayName(string path)
@@ -132,5 +143,13 @@ internal static class RecentFilePath
         var trimmedPath = Path.TrimEndingDirectorySeparator(path);
         var fileName = Path.GetFileName(trimmedPath);
         return string.IsNullOrWhiteSpace(fileName) ? trimmedPath : fileName;
+    }
+
+    public static string GetFileName(string path)
+    {
+        return Path.GetFileName(
+            Uri.TryCreate(path, UriKind.Absolute, out var uri) && !uri.IsFile
+                ? Uri.UnescapeDataString(uri.AbsolutePath)
+                : path);
     }
 }

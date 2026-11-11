@@ -41,6 +41,7 @@ jobs:
           if ($packageVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.0$') { throw 'The package version must use MAJOR.MINOR.PATCH.0.' }
           $version = ./eng/Get-ReleaseVersion.ps1 -Tag "v$packageVersion"
           $tag = "v$($version.ToString(3))"
+          ./eng/Get-ReleaseNotes.ps1 -Tag $tag | Out-Null
 
           $response = gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw 'Unable to check existing release tags.' }

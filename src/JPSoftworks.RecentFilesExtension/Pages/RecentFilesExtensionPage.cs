@@ -189,6 +189,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             var searchToken = Guid.NewGuid();
             var nextCancellationTokenSource = new CancellationTokenSource();
             CancellationTokenSource previousCancellationTokenSource;
+            Exception? restartFailure = null;
             lock (this._syncRoot)
             {
                 if (this._isDisposed)
@@ -203,10 +204,9 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                         new SearchQuery(newSearch, selectedExtensions, selectedFileNames, locationFilter, onlyFolders),
                         searchToken);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    nextCancellationTokenSource.Dispose();
-                    throw;
+                    restartFailure = ex;
                 }
 
                 previousCancellationTokenSource = this._searchCancellationTokenSource;
@@ -218,12 +218,21 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
             previousCancellationTokenSource.Cancel();
             previousCancellationTokenSource.Dispose();
-            this.LoadMore(searchToken);
+            if (restartFailure is not null)
+            {
+                Logger.LogError($"Failed to search recent files {ExceptionDiagnostics.Format(restartFailure)}");
+                this.HasMoreItems = false;
+                this.IsLoading = false;
+                this.RaiseItemsChanged(0);
+            }
+            else
+            {
+                this.LoadMore(searchToken);
+            }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex);
-            throw;
+            Logger.LogError($"Failed to search recent files {ExceptionDiagnostics.Format(ex)}");
         }
     }
 
@@ -272,7 +281,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex);
+            Logger.LogError($"Failed to load recent-file results {ExceptionDiagnostics.Format(ex)}");
 
             int itemCount;
             lock (this._syncRoot)

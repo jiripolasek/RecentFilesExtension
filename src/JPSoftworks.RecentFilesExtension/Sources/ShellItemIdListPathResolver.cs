@@ -4,6 +4,7 @@
 //
 // ------------------------------------------------------------
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using JPSoftworks.RecentFilesExtension.Model;
@@ -36,19 +37,23 @@ internal static partial class ShellItemIdListPathResolver
             return false;
         }
 
-        var pathBuffer = new char[MaximumPathLength];
-        fixed (char* pathPointer = pathBuffer)
+        var pathBuffer = ArrayPool<char>.Shared.Rent(MaximumPathLength);
+        try
         {
-            if (SHGetPathFromIDListEx(
-                    (byte*)itemIdList,
-                    pathPointer,
-                    (uint)pathBuffer.Length,
-                    0) == 0)
+            pathBuffer[0] = '\0';
+            fixed (char* pathPointer = pathBuffer)
             {
-                return false;
+                if (SHGetPathFromIDListEx((byte*)itemIdList, pathPointer, MaximumPathLength, 0) == 0)
+                {
+                    return false;
+                }
             }
-
-            return RecentFilePath.TryNormalize(new string(pathPointer), out path);
+            var length = Array.IndexOf(pathBuffer, '\0', 0, MaximumPathLength);
+            return length > 0 && RecentFilePath.TryNormalize(new string(pathBuffer, 0, length), out path);
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(pathBuffer, clearArray: true);
         }
     }
 

@@ -83,7 +83,16 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         lock (this._syncRoot)
         {
             this._allFiles = newList.ToList();
-            this.ApplyFilterInternal(this._currentQuery);
+            try
+            {
+                this.ApplyFilterInternal(this._currentQuery);
+            }
+            catch
+            {
+                // A bad item must not turn each provider refresh into another failed notification.
+                this._filteredFiles = [];
+                this._cursor = 0;
+            }
             isInitialized = this._isInitialized;
         }
 
@@ -122,15 +131,22 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         lock (this._syncRoot)
         {
             this._currentSearchToken = searchToken;
-            this.ApplyFilterInternal(searchQuery);
+            this._filteredFiles = [];
+            this._cursor = 0;
+            try
+            {
+                this.ApplyFilterInternal(searchQuery);
+            }
+            catch
+            {
+                this._currentQuery = searchQuery;
+                throw;
+            }
         }
     }
 
     private void ApplyFilterInternal(SearchQuery searchQuery)
     {
-        this._currentQuery = searchQuery;
-        this._cursor = 0;
-
         var query = searchQuery.Query;
         var extensionFilter = searchQuery.AllowedExtensions;
         var fileNameFilter = searchQuery.AllowedFileNames;
@@ -157,20 +173,29 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         }
         else
         {
-            var useGlob = query.Contains('?') || query.Contains('*');
+            Glob? glob = null;
+            if (query.Contains('?') || query.Contains('*'))
+            {
+                try
+                {
+                    glob = Glob.Parse(query, new() { Evaluation = { CaseInsensitive = true } });
+                }
+                catch (Exception ex) when (ex is ArgumentException or FormatException or IndexOutOfRangeException)
+                {
+                    if (!string.Equals(query, this._currentQuery.Query, StringComparison.Ordinal))
+                    {
+                        Logger.LogDebug("Invalid wildcard; using a literal search");
+                    }
+                }
+            }
 
-            if (useGlob)
-            {
-                var glob = Glob.Parse(query, new() { Evaluation = { CaseInsensitive = true } });
-                this._filteredFiles = [.. temp.Where(file => FilterGlob(file, glob!))];
-            }
-            else
-            {
-                this._filteredFiles = [.. temp.Where(file => FilterPlain(file, query))];
-            }
+            this._filteredFiles = glob is null
+                ? [.. temp.Where(file => FilterPlain(file, query))]
+                : [.. temp.Where(file => FilterGlob(file, glob))];
         }
 
-        return;
+        this._currentQuery = searchQuery;
+        this._cursor = 0;
 
         static bool FilterPlain(IRecentFile recentFile, string q)
         {
@@ -183,13 +208,14 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
             string[] allowedExtensions,
             string[] allowedFileNames)
         {
+            var fileName = RecentFilePath.GetFileName(recentFile.TargetPath);
             return allowedExtensions is not [] &&
                        allowedExtensions.Contains(
-                           Path.GetExtension(recentFile.TargetPath),
+                           Path.GetExtension(fileName),
                            StringComparer.OrdinalIgnoreCase) ||
                    allowedFileNames is not [] &&
                        allowedFileNames.Contains(
-                           Path.GetFileName(recentFile.TargetPath),
+                           fileName,
                            StringComparer.OrdinalIgnoreCase);
         }
 

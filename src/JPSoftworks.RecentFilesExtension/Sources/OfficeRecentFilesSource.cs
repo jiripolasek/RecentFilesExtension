@@ -5,8 +5,13 @@
 // ------------------------------------------------------------
 
 using System.Globalization;
+using System.Security;
 using Microsoft.Win32;
 using JPSoftworks.RecentFilesExtension.Model;
+
+using JPSoftworks.RecentFilesExtension.Helpers;
+
+using static JPSoftworks.RecentFilesExtension.Sources.RegistryReadHelper;
 
 namespace JPSoftworks.RecentFilesExtension.Sources;
 
@@ -16,16 +21,37 @@ internal sealed partial class OfficeRecentFilesSource : IRecentFileSource
     private const string FileMruKeyName = "File MRU";
     private const string UserMruKeyName = "User MRU";
 
-    private readonly RegistryChangeWatcher[] _watchers;
-    private bool _isDisposed;
+    private readonly string _officePath;
+    private readonly RegistryChangeWatcher _watcher;
+    private readonly ITimer _checkTimer;
+    private readonly Lock _watchLock = new();
+    private Dictionary<string, DateTimeOffset?> _mruTimestamps;
+    private bool _checkPending;
+    private volatile bool _isDisposed;
 
     public OfficeRecentFilesSource()
+        : this(OfficePath)
     {
-        this._watchers = [.. RegistryViews.Supported.Select(
-            view => new RegistryChangeWatcher(OfficePath, view))];
-        foreach (var watcher in this._watchers)
+    }
+
+    internal OfficeRecentFilesSource(string officePath, TimeProvider? timeProvider = null)
+    {
+        this._officePath = officePath;
+        this._watcher = new(officePath, RegistryView.Default);
+        try
         {
-            watcher.Changed += this.OnRegistryChanged;
+            this._checkTimer = (timeProvider ?? TimeProvider.System).CreateTimer(
+                _ => this.CheckForMruChanges(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            lock (this._watchLock)
+            {
+                this._watcher.Changed += this.OnRegistryChanged;
+                this._mruTimestamps = this.ReadMruTimestamps();
+            }
+        }
+        catch
+        {
+            this.Dispose();
+            throw;
         }
     }
 
@@ -34,36 +60,15 @@ internal sealed partial class OfficeRecentFilesSource : IRecentFileSource
     public IReadOnlyList<IRecentFile> GetRecentFiles(CancellationToken cancellationToken)
     {
         List<IRecentFile> items = [];
-        foreach (var view in RegistryViews.Supported)
+        foreach (var fileMru in this.GetFileMruKeys(cancellationToken))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            using var hive = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
-            using var office = hive.OpenSubKey(OfficePath);
-            if (office is null)
+            try
             {
-                continue;
+                ReadFileMru(fileMru, items);
             }
-
-            foreach (var versionName in office.GetSubKeyNames()
-                         .Where(static name => Version.TryParse(name, out _))
-                         .OrderByDescending(static name => Version.Parse(name)))
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                using var version = office.OpenSubKey(versionName);
-                if (version is null)
-                {
-                    continue;
-                }
-
-                foreach (var applicationName in version.GetSubKeyNames())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    using var application = version.OpenSubKey(applicationName);
-                    if (application is not null)
-                    {
-                        ReadApplication(application, items, cancellationToken);
-                    }
-                }
+                // Permissions can change after opening a key; keep the other applications' entries.
             }
         }
 
@@ -71,45 +76,82 @@ internal sealed partial class OfficeRecentFilesSource : IRecentFileSource
             .OrderByDescending(static item => item.LastUsedTimeUtc)
             .DistinctBy(
                 static item => RecentFilePath.GetDeduplicationKey(item.TargetPath),
-                StringComparer.OrdinalIgnoreCase)
+                StringComparer.Ordinal)
             .ToArray();
     }
 
-    private static void ReadApplication(
+    private IEnumerable<RegistryKey> GetFileMruKeys(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var hive = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var office = OpenReadableKey(hive, this._officePath);
+        if (office is null)
+        {
+            yield break;
+        }
+
+        foreach (var versionName in GetReadableSubKeyNames(office)
+                     .Where(static name => Version.TryParse(name, out _))
+                     .OrderByDescending(static name => Version.Parse(name)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var version = OpenReadableKey(office, versionName);
+            if (version is null)
+            {
+                continue;
+            }
+
+            foreach (var applicationName in GetReadableSubKeyNames(version))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var application = OpenReadableKey(version, applicationName);
+                if (application is null)
+                {
+                    continue;
+                }
+
+                foreach (var fileMru in GetApplicationFileMruKeys(application, cancellationToken))
+                {
+                    yield return fileMru;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<RegistryKey> GetApplicationFileMruKeys(
         RegistryKey application,
-        List<IRecentFile> items,
         CancellationToken cancellationToken)
     {
-        using (var directFileMru = application.OpenSubKey(FileMruKeyName))
+        using (var directFileMru = OpenReadableKey(application, FileMruKeyName))
         {
             if (directFileMru is not null)
             {
-                ReadFileMru(directFileMru, items);
+                yield return directFileMru;
             }
         }
 
-        using var userMru = application.OpenSubKey(UserMruKeyName);
+        using var userMru = OpenReadableKey(application, UserMruKeyName);
         if (userMru is null)
         {
-            return;
+            yield break;
         }
 
-        using (var directUserFileMru = userMru.OpenSubKey(FileMruKeyName))
+        using (var directUserFileMru = OpenReadableKey(userMru, FileMruKeyName))
         {
             if (directUserFileMru is not null)
             {
-                ReadFileMru(directUserFileMru, items);
+                yield return directUserFileMru;
             }
         }
 
-        foreach (var accountName in userMru.GetSubKeyNames())
+        foreach (var accountName in GetReadableSubKeyNames(userMru))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var account = userMru.OpenSubKey(accountName);
-            using var accountFileMru = account?.OpenSubKey(FileMruKeyName);
+            using var account = OpenReadableKey(userMru, accountName);
+            using var accountFileMru = account is null ? null : OpenReadableKey(account, FileMruKeyName);
             if (accountFileMru is not null)
             {
-                ReadFileMru(accountFileMru, items);
+                yield return accountFileMru;
             }
         }
     }
@@ -138,7 +180,7 @@ internal sealed partial class OfficeRecentFilesSource : IRecentFileSource
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Logger.LogError("Failed to read an Office MRU entry", ex);
+                Logger.LogError($"Failed to read an Office MRU entry {ExceptionDiagnostics.Format(ex)}");
             }
         }
     }
@@ -156,24 +198,74 @@ internal sealed partial class OfficeRecentFilesSource : IRecentFileSource
 
     private void OnRegistryChanged(object? sender, EventArgs e)
     {
-        if (!this._isDisposed)
+        lock (this._watchLock)
         {
-            this.Changed?.Invoke(this, EventArgs.Empty);
+            if (!this._isDisposed && !this._checkPending)
+            {
+                this._checkPending = this._checkTimer.Change(TimeSpan.FromMilliseconds(250), Timeout.InfiniteTimeSpan);
+            }
+        }
+    }
+
+    private Dictionary<string, DateTimeOffset?> ReadMruTimestamps()
+    {
+        var timestamps = new Dictionary<string, DateTimeOffset?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in this.GetFileMruKeys(CancellationToken.None))
+        {
+            try
+            {
+                timestamps[key.Name] = NativeRegistryMethods.GetLastWriteTimeUtc(key);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                // A key can disappear or become unreadable during enumeration.
+            }
+        }
+        return timestamps;
+    }
+
+    private void CheckForMruChanges()
+    {
+        try
+        {
+            lock (this._watchLock)
+            {
+                if (this._isDisposed)
+                {
+                    return;
+                }
+                this._checkPending = false;
+                var current = this.ReadMruTimestamps();
+                if (current.Count == this._mruTimestamps.Count && current.All(entry =>
+                    this._mruTimestamps.TryGetValue(entry.Key, out var previous) && previous == entry.Value))
+                {
+                    return;
+                }
+                this._mruTimestamps = current;
+            }
+            if (!this._isDisposed)
+            {
+                this.Changed?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to check Office MRU changes or notify subscribers {ExceptionDiagnostics.Format(ex)}");
         }
     }
 
     public void Dispose()
     {
-        if (this._isDisposed)
+        lock (this._watchLock)
         {
-            return;
+            if (this._isDisposed)
+            {
+                return;
+            }
+            this._isDisposed = true;
+            this._watcher.Changed -= this.OnRegistryChanged;
+            this._checkTimer?.Dispose();
         }
-
-        this._isDisposed = true;
-        foreach (var watcher in this._watchers)
-        {
-            watcher.Changed -= this.OnRegistryChanged;
-            watcher.Dispose();
-        }
+        this._watcher.Dispose();
     }
 }
