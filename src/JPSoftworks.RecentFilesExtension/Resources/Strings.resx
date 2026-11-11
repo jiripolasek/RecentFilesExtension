@@ -132,11 +132,95 @@
   <data name="Command_ShowInFolder" xml:space="preserve">
     <value>Show in folder</value>
   </data>
+  <data name="Command_ToggleDetails" xml:space="preserve">
+    <value>Toggle details</value>
+  </data>
+  <data name="Command_ToggleViewMode" xml:space="preserve">
+    <value>Toggle view mode</value>
+  </data>
   <data name="Page_RecentFiles" xml:space="preserve">
     <value>Recent files</value>
   </data>
   <data name="Page_RecentFiles_Subtitle" xml:space="preserve">
     <value>Lists recently used or accessed files or folders</value>
+  </data>
+  <data name="Settings_Group_Sources" xml:space="preserve">
+    <value>Recent file sources</value>
+  </data>
+  <data name="Settings_OpenSaveMru_Title" xml:space="preserve">
+    <value>Windows open and save dialogs</value>
+  </data>
+  <data name="Settings_OpenSaveMru_Subtitle" xml:space="preserve">
+    <value>Include files used in standard Windows open and save dialogs.</value>
+  </data>
+  <data name="Settings_OfficeRecentFiles_Title" xml:space="preserve">
+    <value>Microsoft Office</value>
+  </data>
+  <data name="Settings_OfficeRecentFiles_Subtitle" xml:space="preserve">
+    <value>Include recent files from installed Office versions and all Office accounts.</value>
+  </data>
+  <data name="Settings_Group_Appearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="Settings_ViewMode_Title" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="Settings_ViewMode_Subtitle" xml:space="preserve">
+    <value>Choose a list, a grid of icons, or a gallery with larger previews.</value>
+  </data>
+  <data name="Settings_ViewMode_List" xml:space="preserve">
+    <value>List</value>
+  </data>
+  <data name="Settings_ViewMode_Grid" xml:space="preserve">
+    <value>Grid</value>
+  </data>
+  <data name="Settings_ViewMode_Gallery" xml:space="preserve">
+    <value>Gallery</value>
+  </data>
+  <data name="Settings_HideFileExtensions_Title" xml:space="preserve">
+    <value>Hide file extensions</value>
+  </data>
+  <data name="Settings_HideFileExtensions_Subtitle" xml:space="preserve">
+    <value>Hide the extension in file titles. Full paths and folder names stay unchanged.</value>
+  </data>
+  <data name="Settings_ShowFileTypeInSubtitle_Title" xml:space="preserve">
+    <value>Show file type in subtitle</value>
+  </data>
+  <data name="Settings_ShowFileTypeInSubtitle_Subtitle" xml:space="preserve">
+    <value>Show the file type before the path in list and gallery views.</value>
+  </data>
+  <data name="Settings_ShowFileTypeTags_Title" xml:space="preserve">
+    <value>Show file type tags</value>
+  </data>
+  <data name="Settings_ShowFileTypeTags_Subtitle" xml:space="preserve">
+    <value>Show badges such as PDF, DOCX, or Folder in list view.</value>
+  </data>
+  <data name="Settings_ShowDetails_Title" xml:space="preserve">
+    <value>Show details pane</value>
+  </data>
+  <data name="Settings_ShowDetails_Subtitle" xml:space="preserve">
+    <value>Show the selected item's full name, path, file type, and last-used time.</value>
+  </data>
+  <data name="FileType_File" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="FileType_Folder" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="FileType_ExtensionFile" xml:space="preserve">
+    <value>{0} file</value>
+  </data>
+  <data name="Details_Path" xml:space="preserve">
+    <value>Path</value>
+  </data>
+  <data name="Details_Type" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="Details_LastUsed" xml:space="preserve">
+    <value>Last used</value>
+  </data>
+  <data name="Details_UnknownLastUsed" xml:space="preserve">
+    <value>Unknown</value>
   </data>
   <data name="UserExperienceHelper_CmdPalIsInstalledButFailedToStart" xml:space="preserve">
 	  <value>PowerToys Command Palette is installed, but failed to start.

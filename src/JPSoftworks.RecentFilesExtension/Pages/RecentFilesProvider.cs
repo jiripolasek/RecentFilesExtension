@@ -1,34 +1,33 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Diagnostics;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
+using JPSoftworks.RecentFilesExtension.Sources;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
-internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
+internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 {
-    private static readonly TimeSpan RefreshDebounceInterval = TimeSpan.FromMilliseconds(500);
-    private const int MaxRecentFileCount = 500;
-    private const string ShortcutFileSearchPattern = "*.lnk";
-
-    private readonly CachedShellLinksHelper _shellLinksHelper = new();
-    private readonly FileSystemWatcher? _fileSystemWatcher;
-    private readonly string _recentFilesFolderPath;
+    private static readonly TimeSpan RefreshDelay = TimeSpan.FromMilliseconds(500);
+    private readonly IRecentFileSource _source;
     private bool _first = true;
 
     // cache + sync
     private readonly Lock _syncRoot = new();
+    private readonly Lock _lifecycleLock = new();
     private List<IRecentFile> _cachedRecentFiles = [];
     private bool _isInitialLoadComplete;
+    private bool _isRefreshInProgress;
+    private bool _isDisposed;
 
-    private readonly System.Timers.Timer _reloadTimer = new(RefreshDebounceInterval) { AutoReset = false };
+    private readonly System.Timers.Timer _reloadTimer = new(RefreshDelay) { AutoReset = false };
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly SemaphoreSlim _refreshSemaphore = new(1, 1);
+    private readonly CancellationToken _cancellationToken;
 
     /// <summary>
     /// Fired whenever the list of recent files actually changes.
@@ -40,32 +39,26 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
     /// </summary>
     public event EventHandler? InitialLoadComplete;
 
-    internal RecentFilesProvider()
+    internal RecentFilesProvider(IRecentFilesSettings settings)
+        : this(new CompositeRecentFileSource(settings))
     {
-        this._recentFilesFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+    }
 
-        if (!string.IsNullOrWhiteSpace(this._recentFilesFolderPath))
-        {
-            this._fileSystemWatcher = new(this._recentFilesFolderPath, ShortcutFileSearchPattern)
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                IncludeSubdirectories = false,
-                EnableRaisingEvents = true
-            };
-            this._fileSystemWatcher.Created += this.OnFsEvent;
-            this._fileSystemWatcher.Deleted += this.OnFsEvent;
-            this._fileSystemWatcher.Renamed += this.OnFsEvent;
-            this._fileSystemWatcher.Changed += this.OnFsEvent;
+    internal RecentFilesProvider(IRecentFileSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
 
-            this._reloadTimer.Elapsed += (_, _) => this.RefreshCache();
-        }
+        this._source = source;
+        this._cancellationToken = this._cancellationTokenSource.Token;
+        this._source.Changed += this.OnSourceChanged;
+        this._reloadTimer.Elapsed += (_, _) => this.RefreshCache();
 
         // Start initial cache loading on background thread
-        _ = Task.Run(this.InitialCacheLoadAsync, this._cancellationTokenSource.Token);
+        _ = Task.Run(this.InitialCacheLoadAsync, this._cancellationToken);
     }
 
     /// <summary>
-    /// Returns the *cached* list of recent files.  
+    /// Returns the *cached* list of recent files.
     /// Callers should subscribe to <see cref="RecentFilesChanged"/> for updates.
     /// </summary>
     public IList<IRecentFile> GetRecentFiles()
@@ -102,10 +95,10 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             return true;
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, this._cancellationTokenSource.Token);
+            cancellationToken, this._cancellationToken);
 
-        var tcs = new TaskCompletionSource<bool>();
-        
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         void OnInitialLoadComplete(object? sender, EventArgs e)
         {
             tcs.TrySetResult(true);
@@ -148,67 +141,71 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
 
     private async Task InitialCacheLoadAsync()
     {
+        var stopwatch = Stopwatch.StartNew();
+        Logger.LogDebug("Initial cache load started");
+
         try
         {
-            await Task.Run(this.RefreshCache, this._cancellationTokenSource.Token);
-
-            lock (this._syncRoot)
-            {
-                this._isInitialLoadComplete = true;
-            }
-
-            this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
+            await Task.Run(this.RefreshCache, this._cancellationToken);
+            this._cancellationToken.ThrowIfCancellationRequested();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
         {
-            // Expected when disposing
+            Logger.LogDebug($"Initial cache load canceled after {stopwatch.ElapsedMilliseconds}ms");
+            return;
         }
         catch (Exception ex)
         {
-            Logger.LogError("Failed to complete initial cache load", ex);
-            
-            lock (this._syncRoot)
-            {
-                this._isInitialLoadComplete = true;
-            }
+            Logger.LogError($"Failed to complete initial cache load after {stopwatch.ElapsedMilliseconds}ms {ExceptionDiagnostics.Format(ex)}");
+        }
 
-            this.InitialLoadComplete?.Invoke(this, EventArgs.Empty);
+        int itemCount;
+        lock (this._syncRoot)
+        {
+            this._isInitialLoadComplete = true;
+            itemCount = this._cachedRecentFiles.Count;
+        }
+
+        Logger.LogDebug($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
+        foreach (EventHandler handler in this.InitialLoadComplete?.GetInvocationList() ?? [])
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to notify a subscriber that initial loading completed {ExceptionDiagnostics.Format(ex)}");
+            }
         }
     }
 
-    private void OnFsEvent(object sender, FileSystemEventArgs e)
+    private void OnSourceChanged(object? sender, EventArgs e)
     {
-        Logger.LogDebug($"File system event: {e.ChangeType} {e.Name} | {e.FullPath}");
+        lock (this._lifecycleLock)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
 
-        this._reloadTimer.Stop();
-        this._reloadTimer.Start();
+            this.ScheduleReload();
+        }
     }
 
     private void RefreshCache()
     {
-        if (this._cancellationTokenSource.Token.IsCancellationRequested)
-            return;
-
-        // Try to acquire the semaphore immediately - if can't, it means refresh is already in progress
-        if (!this._refreshSemaphore.Wait(0))
+        if (!this.TryBeginRefresh())
         {
-            // If a refresh is already in progress, schedule another one for later
-            // This ensures we don't miss changes that occurred during the current refresh
-            this._reloadTimer.Stop();
-            this._reloadTimer.Start();
             return;
         }
 
         try
         {
-            List<IRecentFile> newList;
-            try
+            List<IRecentFile> newList = [.. this._source.GetRecentFiles(this._cancellationToken)];
+
+            if (this._cancellationToken.IsCancellationRequested)
             {
-                newList = this.LoadRecentFilesFromDisk();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Failed to reload recent files", ex);
                 return;
             }
 
@@ -216,11 +213,9 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
             lock (this._syncRoot)
             {
                 var stopwatch = Stopwatch.StartNew();
-                changed = newList.Count != this._cachedRecentFiles.Count
-                          || !newList.Select(static i => i.TargetPath)
-                                     .SequenceEqual(this._cachedRecentFiles.Select(static i => i.TargetPath), StringComparer.OrdinalIgnoreCase);
-                
-                Logger.LogDebug($"Refresh 30 | Cache updated: {changed}, took {stopwatch.ElapsedMilliseconds}ms");
+                changed = !HaveSameItems(newList, this._cachedRecentFiles);
+
+                Logger.LogDebug($"Recent files refreshed | Cache updated: {changed}, took {stopwatch.ElapsedMilliseconds}ms");
                 stopwatch.Stop();
 
                 if (changed)
@@ -229,87 +224,113 @@ internal partial class RecentFilesProvider : IDisposable, IRecentFilesProvider
                 }
             }
 
-            if (changed || this._first)
+            if (!this._cancellationToken.IsCancellationRequested && (changed || this._first))
             {
                 this._first = false;
                 this.RecentFilesChanged?.Invoke(null, [.. newList]);
             }
         }
+        catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
+        {
+            // Disposing the provider cancels the current refresh.
+        }
+        catch (Exception ex)
+        {
+            this._first = true;
+            Logger.LogError($"Failed to refresh recent files or notify subscribers {ExceptionDiagnostics.Format(ex)}");
+        }
         finally
         {
-            this._refreshSemaphore.Release();
+            this.EndRefresh();
         }
     }
 
-    private List<IRecentFile> LoadRecentFilesFromDisk()
+    private bool TryBeginRefresh()
     {
-        var stopwatch = Stopwatch.StartNew();
-
-        var recentFilesShortcuts = new DirectoryInfo(this._recentFilesFolderPath)
-            .GetFiles(ShortcutFileSearchPattern, SearchOption.TopDirectoryOnly)
-            .OrderByDescending(static t => t.LastWriteTimeUtc)
-            .ToArray();
-
-        Logger.LogDebug($"Refresh 10 | Found {recentFilesShortcuts.Length} recent files shortcuts in {this._recentFilesFolderPath} in {stopwatch.ElapsedMilliseconds}ms");
-
-        var items = new List<IRecentFile>();
-        var addedTargetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var counter = 0;
-
-        foreach (var fileInfo in recentFilesShortcuts)
+        lock (this._lifecycleLock)
         {
-            if (counter >= MaxRecentFileCount)
-                break;
+            if (this._isDisposed || this._cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
 
-            if (this._cancellationTokenSource.Token.IsCancellationRequested)
-                break;
+            if (this._isRefreshInProgress)
+            {
+                this.ScheduleReload();
+                return false;
+            }
+
+            this._isRefreshInProgress = true;
+            return true;
+        }
+    }
+
+    private void ScheduleReload()
+    {
+        if (!this._reloadTimer.Enabled)
+        {
+            this._reloadTimer.Start();
+        }
+    }
+
+    private void EndRefresh()
+    {
+        lock (this._lifecycleLock)
+        {
+            this._isRefreshInProgress = false;
+        }
+    }
+
+    private static bool HaveSameItems(List<IRecentFile> first, List<IRecentFile> second)
+    {
+        if (first.Count != second.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < first.Count; i++)
+        {
+            var firstItem = first[i];
+            var secondItem = second[i];
 
             try
             {
-                if (!this._shellLinksHelper.TryGetShellLink(fileInfo, out var shortcutFile))
-                    continue;
-                
-                // avoid duplicates
-                var isNetwork = shortcutFile.TargetPath.IsNetworkPath();
-                var key = isNetwork ? shortcutFile.TargetPath : shortcutFile.TargetPath.ToLowerInvariant();
-                if (!addedTargetPaths.Add(key))
-                    continue;
-
-                // drop parent-folder entries if immediately followed by a file in that folder
-                if (items.Count > 0 && items[^1].TargetPath.Equals(Path.GetDirectoryName(shortcutFile.TargetPath), StringComparison.OrdinalIgnoreCase))
+                if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
+                    !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
+                    !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
+                    !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
+                    firstItem.IsDirectory() != secondItem.IsDirectory() ||
+                    firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
                 {
-                    counter--;
-                    items.RemoveAt(items.Count - 1);
+                    return false;
                 }
-
-                // skip if it's the same as last
-                if (items.Count > 0 && items[^1].TargetPath.Equals(shortcutFile.TargetPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                items.Add(shortcutFile);
-                counter++;
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.LogError($"Failed to process shortcut {fileInfo.FullName}", ex);
+                // Unreadable metadata is not evidence that the cached snapshot is still current.
+                return false;
             }
         }
 
-        Logger.LogDebug($"Refresh 20 | Finished in {stopwatch.ElapsedMilliseconds}ms");
-        
-        stopwatch.Stop();
-
-        return items;
+        return true;
     }
 
     public void Dispose()
     {
-        this._cancellationTokenSource.Cancel();
-        this._fileSystemWatcher?.Dispose();
+        lock (this._lifecycleLock)
+        {
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            this._isDisposed = true;
+            this._cancellationTokenSource.Cancel();
+        }
+
+        this._source.Changed -= this.OnSourceChanged;
+        this._source.Dispose();
         this._reloadTimer.Dispose();
-        this._refreshSemaphore.Dispose();
         this._cancellationTokenSource.Dispose();
     }
 }

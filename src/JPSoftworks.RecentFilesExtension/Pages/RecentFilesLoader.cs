@@ -18,7 +18,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     private List<IRecentFile> _allFiles = [];
     private List<IRecentFile> _filteredFiles = [];
     private int _cursor;
-    private SearchQuery _currentQuery = new(string.Empty, [], string.Empty);
+    private SearchQuery _currentQuery = new(string.Empty, [], [], string.Empty, false);
     private Guid _currentSearchToken;
     private bool _isInitialized;
 
@@ -40,6 +40,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         this._pageSize = pageSize;
         this._recentFilesProvider = recentFilesProvider;
         this._recentFilesProvider.RecentFilesChanged += this.OnRecentFilesChanged;
+        this._recentFilesProvider.InitialLoadComplete += this.OnInitialLoadComplete;
 
         this.InitializeFromProvider();
     }
@@ -60,39 +61,66 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
 
     private void InitializeFromProvider()
     {
-        var files = this._recentFilesProvider.GetRecentFiles().ToList();
+        bool isInitialLoadComplete;
 
         lock (this._syncRoot)
         {
-            this._allFiles = files;
+            this._allFiles = this._recentFilesProvider.GetRecentFiles().ToList();
             this._filteredFiles = this._allFiles;
-            this._isInitialized = this._recentFilesProvider.IsInitialLoadComplete;
+            isInitialLoadComplete = this._recentFilesProvider.IsInitialLoadComplete;
         }
 
-        if (this._isInitialized)
+        if (isInitialLoadComplete)
         {
-            this.InitializationComplete?.Invoke(this, EventArgs.Empty);
-            this.SourceChanged?.Invoke(this, EventArgs.Empty);
+            this.CompleteInitialization();
         }
     }
 
     private void OnRecentFilesChanged(object? sender, IList<IRecentFile> newList)
     {
-        bool wasInitialized;
+        bool isInitialized;
+
         lock (this._syncRoot)
         {
             this._allFiles = newList.ToList();
-            this.ApplyFilterInternal(this._currentQuery);
-            wasInitialized = this._isInitialized;
+            try
+            {
+                this.ApplyFilterInternal(this._currentQuery);
+            }
+            catch
+            {
+                // A bad item must not turn each provider refresh into another failed notification.
+                this._filteredFiles = [];
+                this._cursor = 0;
+            }
+            isInitialized = this._isInitialized;
+        }
+
+        if (isInitialized)
+        {
+            this.SourceChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void OnInitialLoadComplete(object? sender, EventArgs e)
+    {
+        this.CompleteInitialization();
+    }
+
+    private void CompleteInitialization()
+    {
+        bool initializationCompleted;
+
+        lock (this._syncRoot)
+        {
+            initializationCompleted = !this._isInitialized;
             this._isInitialized = true;
         }
 
-        if (!wasInitialized)
+        if (initializationCompleted)
         {
             this.InitializationComplete?.Invoke(this, EventArgs.Empty);
         }
-
-        this.SourceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -103,26 +131,40 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         lock (this._syncRoot)
         {
             this._currentSearchToken = searchToken;
-            this.ApplyFilterInternal(searchQuery);
+            this._filteredFiles = [];
+            this._cursor = 0;
+            try
+            {
+                this.ApplyFilterInternal(searchQuery);
+            }
+            catch
+            {
+                this._currentQuery = searchQuery;
+                throw;
+            }
         }
     }
 
     private void ApplyFilterInternal(SearchQuery searchQuery)
     {
-        this._currentQuery = searchQuery;
-        this._cursor = 0;
-
         var query = searchQuery.Query;
         var extensionFilter = searchQuery.AllowedExtensions;
+        var fileNameFilter = searchQuery.AllowedFileNames;
         var location = searchQuery.Location;
 
-        var temp = extensionFilter is []
+        var temp = extensionFilter is [] && fileNameFilter is []
             ? this._allFiles
-            : this._allFiles.Where(f => extensionFilter.Contains(Path.GetExtension(f.TargetPath), StringComparer.InvariantCultureIgnoreCase));
+            : this._allFiles.Where(file => MatchesFileFilter(file, extensionFilter, fileNameFilter));
+
+        if (searchQuery.ShowOnlyFolders)
+        {
+            temp = temp.Where(static f => f.IsDirectory());
+        }
 
         if (!string.IsNullOrWhiteSpace(location))
         {
-            temp = temp.Where(f => f.TargetPath.StartsWith(location, StringComparison.OrdinalIgnoreCase));
+            var normalizedLocation = Path.TrimEndingDirectorySeparator(location);
+            temp = temp.Where(f => IsPathInLocation(f.TargetPath, normalizedLocation));
         }
 
         if (string.IsNullOrWhiteSpace(query))
@@ -131,20 +173,29 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         }
         else
         {
-            var useGlob = query.Contains('?') || query.Contains('*');
+            Glob? glob = null;
+            if (query.Contains('?') || query.Contains('*'))
+            {
+                try
+                {
+                    glob = Glob.Parse(query, new() { Evaluation = { CaseInsensitive = true } });
+                }
+                catch (Exception ex) when (ex is ArgumentException or FormatException or IndexOutOfRangeException)
+                {
+                    if (!string.Equals(query, this._currentQuery.Query, StringComparison.Ordinal))
+                    {
+                        Logger.LogDebug("Invalid wildcard; using a literal search");
+                    }
+                }
+            }
 
-            if (useGlob)
-            {
-                var glob = Glob.Parse(query, new() { Evaluation = { CaseInsensitive = true } });
-                this._filteredFiles = [.. temp.Where(file => FilterGlob(file, glob!))];
-            }
-            else
-            {
-                this._filteredFiles = [.. temp.Where(file => FilterPlain(file, query))];
-            }
+            this._filteredFiles = glob is null
+                ? [.. temp.Where(file => FilterPlain(file, query))]
+                : [.. temp.Where(file => FilterGlob(file, glob))];
         }
 
-        return;
+        this._currentQuery = searchQuery;
+        this._cursor = 0;
 
         static bool FilterPlain(IRecentFile recentFile, string q)
         {
@@ -152,10 +203,43 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
                    recentFile.TargetPath.Contains(q, StringComparison.OrdinalIgnoreCase);
         }
 
+        static bool MatchesFileFilter(
+            IRecentFile recentFile,
+            string[] allowedExtensions,
+            string[] allowedFileNames)
+        {
+            var fileName = RecentFilePath.GetFileName(recentFile.TargetPath);
+            return allowedExtensions is not [] &&
+                       allowedExtensions.Contains(
+                           Path.GetExtension(fileName),
+                           StringComparer.OrdinalIgnoreCase) ||
+                   allowedFileNames is not [] &&
+                       allowedFileNames.Contains(
+                           fileName,
+                           StringComparer.OrdinalIgnoreCase);
+        }
+
         static bool FilterGlob(IRecentFile recentFile, Glob glob)
         {
             return glob.IsMatch(recentFile.DisplayName) ||
                    glob.IsMatch(recentFile.TargetPath);
+        }
+
+        static bool IsPathInLocation(string path, string normalizedLocation)
+        {
+            if (!path.StartsWith(normalizedLocation, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return path.Length == normalizedLocation.Length ||
+                   Path.EndsInDirectorySeparator(normalizedLocation) ||
+                   IsDirectorySeparator(path[normalizedLocation.Length]);
+        }
+
+        static bool IsDirectorySeparator(char value)
+        {
+            return value == Path.DirectorySeparatorChar || value == Path.AltDirectorySeparatorChar;
         }
     }
 
@@ -195,7 +279,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
         foreach (var shortcut in slice)
         {
             ct.ThrowIfCancellationRequested();
-            entries.Add(new(shortcut));
+            entries.Add(new(shortcut, ct));
         }
 
         lock (this._syncRoot)
@@ -207,5 +291,6 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     public void Dispose()
     {
         this._recentFilesProvider.RecentFilesChanged -= this.OnRecentFilesChanged;
+        this._recentFilesProvider.InitialLoadComplete -= this.OnInitialLoadComplete;
     }
 }

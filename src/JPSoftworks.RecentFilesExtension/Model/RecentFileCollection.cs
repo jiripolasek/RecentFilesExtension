@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
 using System.Collections;
@@ -11,7 +11,7 @@ namespace JPSoftworks.RecentFilesExtension.Model;
 /// <summary>
 /// A specialized collection for managing recent files with efficient lookups and duplicate detection.
 /// </summary>
-internal sealed class RecentFileCollection : IList<IRecentFile>
+internal sealed partial class RecentFileCollection : IList<IRecentFile>
 {
     private readonly List<IRecentFile> _items = [];
     private readonly Dictionary<string, IRecentFile> _itemsByPath = new(StringComparer.OrdinalIgnoreCase);

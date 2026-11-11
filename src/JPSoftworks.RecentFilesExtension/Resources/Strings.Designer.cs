@@ -10,8 +10,8 @@
 
 namespace JPSoftworks.RecentFilesExtension.Resources {
     using System;
-    
-    
+
+
     /// <summary>
     ///   A strongly-typed resource class, for looking up localized strings, etc.
     /// </summary>
@@ -19,19 +19,19 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
     // class via a tool like ResGen or Visual Studio.
     // To add or remove a member, edit your .ResX file then rerun ResGen
     // with the /str option, or rebuild your VS project.
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "17.0.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
     internal class Strings {
-        
+
         private static global::System.Resources.ResourceManager resourceMan;
-        
+
         private static global::System.Globalization.CultureInfo resourceCulture;
-        
+
         [global::System.Diagnostics.CodeAnalysis.SuppressMessageAttribute("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode")]
         internal Strings() {
         }
-        
+
         /// <summary>
         ///   Returns the cached ResourceManager instance used by this class.
         /// </summary>
@@ -45,7 +45,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return resourceMan;
             }
         }
-        
+
         /// <summary>
         ///   Overrides the current thread's CurrentUICulture property for all
         ///   resource lookups using this strongly typed resource class.
@@ -59,7 +59,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 resourceCulture = value;
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Copy path.
         /// </summary>
@@ -68,7 +68,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Command_CopyPath", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Open file.
         /// </summary>
@@ -77,7 +77,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Command_OpenFile", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Open folder.
         /// </summary>
@@ -86,7 +86,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Command_OpenFolder", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Open with....
         /// </summary>
@@ -95,7 +95,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Command_OpenWith", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Show in folder.
         /// </summary>
@@ -104,7 +104,88 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Command_ShowInFolder", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Toggle details.
+        /// </summary>
+        internal static string Command_ToggleDetails {
+            get {
+                return ResourceManager.GetString("Command_ToggleDetails", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Toggle view mode.
+        /// </summary>
+        internal static string Command_ToggleViewMode {
+            get {
+                return ResourceManager.GetString("Command_ToggleViewMode", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Last used.
+        /// </summary>
+        internal static string Details_LastUsed {
+            get {
+                return ResourceManager.GetString("Details_LastUsed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Path.
+        /// </summary>
+        internal static string Details_Path {
+            get {
+                return ResourceManager.GetString("Details_Path", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Type.
+        /// </summary>
+        internal static string Details_Type {
+            get {
+                return ResourceManager.GetString("Details_Type", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Unknown.
+        /// </summary>
+        internal static string Details_UnknownLastUsed {
+            get {
+                return ResourceManager.GetString("Details_UnknownLastUsed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to {0} file.
+        /// </summary>
+        internal static string FileType_ExtensionFile {
+            get {
+                return ResourceManager.GetString("FileType_ExtensionFile", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to File.
+        /// </summary>
+        internal static string FileType_File {
+            get {
+                return ResourceManager.GetString("FileType_File", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Folder.
+        /// </summary>
+        internal static string FileType_Folder {
+            get {
+                return ResourceManager.GetString("FileType_Folder", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Recent files.
         /// </summary>
@@ -113,7 +194,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Page_RecentFiles", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Lists recently used or accessed files or folders.
         /// </summary>
@@ -122,7 +203,178 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("Page_RecentFiles_Subtitle", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Appearance.
+        /// </summary>
+        internal static string Settings_Group_Appearance {
+            get {
+                return ResourceManager.GetString("Settings_Group_Appearance", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Recent file sources.
+        /// </summary>
+        internal static string Settings_Group_Sources {
+            get {
+                return ResourceManager.GetString("Settings_Group_Sources", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Hide the extension in file titles. Full paths and folder names stay unchanged..
+        /// </summary>
+        internal static string Settings_HideFileExtensions_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_HideFileExtensions_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Hide file extensions.
+        /// </summary>
+        internal static string Settings_HideFileExtensions_Title {
+            get {
+                return ResourceManager.GetString("Settings_HideFileExtensions_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Include recent files from installed Office versions and all Office accounts..
+        /// </summary>
+        internal static string Settings_OfficeRecentFiles_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_OfficeRecentFiles_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Microsoft Office.
+        /// </summary>
+        internal static string Settings_OfficeRecentFiles_Title {
+            get {
+                return ResourceManager.GetString("Settings_OfficeRecentFiles_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Include files used in standard Windows open and save dialogs..
+        /// </summary>
+        internal static string Settings_OpenSaveMru_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_OpenSaveMru_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Windows open and save dialogs.
+        /// </summary>
+        internal static string Settings_OpenSaveMru_Title {
+            get {
+                return ResourceManager.GetString("Settings_OpenSaveMru_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show the selected item&apos;s full name, path, file type, and last-used time..
+        /// </summary>
+        internal static string Settings_ShowDetails_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_ShowDetails_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show details pane.
+        /// </summary>
+        internal static string Settings_ShowDetails_Title {
+            get {
+                return ResourceManager.GetString("Settings_ShowDetails_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show the file type before the path in list and gallery views..
+        /// </summary>
+        internal static string Settings_ShowFileTypeInSubtitle_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_ShowFileTypeInSubtitle_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show file type in subtitle.
+        /// </summary>
+        internal static string Settings_ShowFileTypeInSubtitle_Title {
+            get {
+                return ResourceManager.GetString("Settings_ShowFileTypeInSubtitle_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show badges such as PDF, DOCX, or Folder in list view..
+        /// </summary>
+        internal static string Settings_ShowFileTypeTags_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_ShowFileTypeTags_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Show file type tags.
+        /// </summary>
+        internal static string Settings_ShowFileTypeTags_Title {
+            get {
+                return ResourceManager.GetString("Settings_ShowFileTypeTags_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Gallery.
+        /// </summary>
+        internal static string Settings_ViewMode_Gallery {
+            get {
+                return ResourceManager.GetString("Settings_ViewMode_Gallery", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Grid.
+        /// </summary>
+        internal static string Settings_ViewMode_Grid {
+            get {
+                return ResourceManager.GetString("Settings_ViewMode_Grid", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to List.
+        /// </summary>
+        internal static string Settings_ViewMode_List {
+            get {
+                return ResourceManager.GetString("Settings_ViewMode_List", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Choose a list, a grid of icons, or a gallery with larger previews..
+        /// </summary>
+        internal static string Settings_ViewMode_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_ViewMode_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to View.
+        /// </summary>
+        internal static string Settings_ViewMode_Title {
+            get {
+                return ResourceManager.GetString("Settings_ViewMode_Title", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to PowerToys Command Palette is installed, but failed to start.
         ///
@@ -133,7 +385,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("UserExperienceHelper_CmdPalIsInstalledButFailedToStart", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to PowerToys Command Palette is not installed.
         ///
@@ -144,7 +396,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("UserExperienceHelper_CmdPalIsNotInstalled", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Error.
         /// </summary>
@@ -153,7 +405,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("UserExperienceHelper_ErrorCaption", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to An error occurred while launching the extension.
         ///
@@ -164,7 +416,7 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("UserExperienceHelper_GeneralErrorOnStart", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Information.
         /// </summary>

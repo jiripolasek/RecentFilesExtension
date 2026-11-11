@@ -305,3 +305,10 @@ dotnet_style_parentheses_in_arithmetic_binary_operators = always_for_clarity:sil
 dotnet_style_parentheses_in_other_binary_operators = always_for_clarity:silent
 dotnet_style_parentheses_in_relational_binary_operators = always_for_clarity:silent
 dotnet_style_parentheses_in_other_operators = never_if_unnecessary:silent
+
+[*.csproj]
+
+indent_size = 2
+indent_style = space
+end_of_line = crlf
+insert_final_newline = true

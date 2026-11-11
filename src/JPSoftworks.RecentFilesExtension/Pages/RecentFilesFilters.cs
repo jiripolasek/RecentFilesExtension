@@ -9,18 +9,15 @@ using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
 
-internal class RecentFilesFilters : Filters
+internal sealed partial class RecentFilesFilters : Filters
 {
     private const string EverythingFilterId = "Everything";
+    private readonly IFilterItem[] _filters;
 
     public RecentFilesFilters()
     {
         this.CurrentFilterId = EverythingFilterId;
-    }
-
-    public override IFilterItem[] GetFilters()
-    {
-        return
+        IFilterItem[] filters =
         [
             new FileFilter
             {
@@ -118,8 +115,11 @@ internal class RecentFilesFilters : Filters
                 Extensions =
                 [
                     ".sln", ".slnx", ".csproj", ".vcxproj", ".fsproj", ".xcodeproj",
-                    ".pyproj", ".vbproj", ".makefile", ".cmake", "CMakeLists.txt",
-                    ".gradle", ".pom", ".props", ".targets", ".proj"
+                    ".pyproj", ".vbproj", ".cmake", ".gradle", ".props", ".targets", ".proj"
+                ],
+                FileNames =
+                [
+                    "CMakeLists.txt", "Makefile", "pom.xml"
                 ],
                 Icon = Icons.Filters.Projects
             },
@@ -143,6 +143,14 @@ internal class RecentFilesFilters : Filters
                 ],
                 Icon = Icons.Filters.Database
             },
+
+            new Separator(),
+
+            new FoldersFilter
+            {
+                Name = "Folders", Id = "folders", Icon = Icons.Filters.Folders
+            },
+
             new Separator(),
 
             new LocationFilter("folder_documents", Environment.SpecialFolder.MyDocuments)
@@ -179,5 +187,9 @@ internal class RecentFilesFilters : Filters
                 Icon = Icons.Filters.UserProfileFolder, Name = "User Profile folder"
             }
         ];
+        this._filters = [.. filters.Where(static filter =>
+            filter is not LocationFilter location || !string.IsNullOrWhiteSpace(location.Location))];
     }
+
+    public override IFilterItem[] GetFilters() => this._filters;
 }

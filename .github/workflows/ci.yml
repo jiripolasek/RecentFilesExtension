@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      config:
+        description: Validated repository workflow configuration
+        value: ${{ jobs.settings.outputs.config }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  settings:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 10
+    outputs:
+      config: ${{ steps.config.outputs.config }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read SDK version
+        id: sdk
+        shell: pwsh
+        run: |
+          "version=$(./eng/Get-DotNetVersion.ps1)" >> $env:GITHUB_OUTPUT
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ steps.sdk.outputs.version }}
+      - name: Read workflow configuration
+        id: config
+        shell: pwsh
+        run: |
+          $config = ./eng/Get-WorkflowConfig.ps1
+          "config=$($config | ConvertTo-Json -Depth 10 -Compress)" >> $env:GITHUB_OUTPUT
+
+      - name: Validate packaging configuration
+        shell: pwsh
+        env:
+          WORKFLOW_CONFIG: ${{ steps.config.outputs.config }}
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          foreach ($entry in $config.Matrix.include) {
+            ./eng/Test-WapProject.ps1 -WapProjectPath $entry.config.WapProjectPath -Configuration $entry.config.DefaultConfiguration -Platform $entry.platform
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Test publishing automation
+        shell: pwsh
+        run: |
+          ./eng/Test-WorkflowConfig.ps1
+          ./eng/Test-WapInitialization.ps1
+          ./eng/Test-ReleaseTag.ps1
+          ./eng/Test-WinGetWorkflow.ps1
+          ./eng/Test-HyperVDeployment.ps1
+
+  portable-settings:
+    name: Validate configuration on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read SDK version
+        id: sdk
+        shell: pwsh
+        run: |
+          "version=$(./eng/Get-DotNetVersion.ps1)" >> $env:GITHUB_OUTPUT
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ steps.sdk.outputs.version }}
+      - name: Test evaluated configuration and release metadata
+        shell: pwsh
+        run: |
+          ./eng/Get-WorkflowConfig.ps1 | ConvertTo-Json -Depth 10
+          ./eng/Test-WorkflowConfig.ps1
+          ./eng/Test-ReleaseTag.ps1
+          ./eng/Test-WinGetWorkflow.ps1
+
+  build-and-test:
+    name: Build and test (${{ matrix.platform }})
+    needs: settings
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.settings.outputs.config).Matrix }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TARGET_PLATFORM: ${{ matrix.platform }}
+      TARGET_RUNTIME: ${{ matrix.runtime }}
+      WORKFLOW_CONFIG: ${{ toJSON(matrix.config) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ fromJSON(needs.settings.outputs.config).DotNetVersion }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+        with:
+          vs-version: '[18.0,19.0)'
+          msbuild-architecture: x64
+
+      - name: Restore WAP publish assets
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          dotnet restore $config.AppProjectPath --runtime $env:TARGET_RUNTIME "-p:Configuration=$($config.DefaultConfiguration)" "-p:Platform=$env:TARGET_PLATFORM" -p:SelfContained=true -p:PublishAot=true -p:PublishTrimmed=true "-p:BaseIntermediateOutputPath=obj/wappublish/$env:TARGET_RUNTIME/"
+
+      - name: Build unsigned Store upload packages
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          msbuild $config.WapProjectPath /restore /t:Build /m /nologo /verbosity:minimal "/p:Configuration=$($config.DefaultConfiguration)" "/p:Platform=$env:TARGET_PLATFORM" "/p:CmdPalTargetPlatformVersion=$($config.WindowsSdkVersion)" "/p:AppxPackageDir=$env:GITHUB_WORKSPACE/$($config.ArtifactsPath)/" /p:PublishAot=true /p:PublishTrimmed=true /p:UapAppxPackageBuildMode=StoreUpload /p:AppxBundle=Never /p:AppxPackageSigningEnabled=false /p:SkipKillRunningExecutable=true
+
+      - name: Test extension
+        if: matrix.platform == 'x64'
+        run: |
+          $config = $env:WORKFLOW_CONFIG | ConvertFrom-Json
+          $testIndex = 0
+          foreach ($project in $config.TestProjects) {
+            dotnet test $project --configuration $config.DefaultConfiguration --runtime $env:TARGET_RUNTIME "-p:Platform=$env:TARGET_PLATFORM" -p:SkipKillRunningExecutable=true --logger trx --results-directory "$($config.ArtifactsPath)/test-results/$testIndex"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $testIndex++
+          }
+
+      - name: Upload test results
+        if: always() && matrix.platform == 'x64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: ${{ matrix.config.ArtifactsPath }}/test-results/**/*.trx
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Save Store packages as GitHub artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-store-packages-${{ github.sha }}-${{ matrix.platform }}
+          path: ${{ matrix.config.ArtifactsPath }}/*.msixupload
+          if-no-files-found: error
+          retention-days: 7

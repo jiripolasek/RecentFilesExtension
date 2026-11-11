@@ -1,14 +1,16 @@
 ﻿// ------------------------------------------------------------
-// 
+//
 // Copyright (c) Jiří Polášek. All rights reserved.
-// 
+//
 // ------------------------------------------------------------
 
+using System.Buffers;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
+using System.Runtime.InteropServices.Marshalling;
+using JPSoftworks.RecentFilesExtension.Sources;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.Storage.FileSystem;
-using Windows.Win32.System.Com;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.Shell.Common;
 using static Windows.Win32.PInvoke;
@@ -21,281 +23,198 @@ namespace JPSoftworks.RecentFilesExtension.Helpers;
 /// <summary>
 /// Helper for resolving .lnk shortcuts using CsWin32-generated interop.
 /// </summary>
-public sealed partial class ShellLinkHelper : IShellLinkHelper, IDisposable
+public sealed partial class ShellLinkHelper : IDisposable
 {
     private const int MAX_PATH = 260;
 
+    private readonly ShellLinkComObject _comObject;
     private readonly IPersistFile _persistFile;
+    private readonly IPersistStream _persistStream;
     private readonly IShellLinkW _shellLink;
 
-    public string Description { get; private set; } = string.Empty;
-    public string Arguments { get; private set; } = string.Empty;
-    public bool HasArguments { get; private set; }
     public string TargetPath { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;
-    public string? IconPath { get; private set; }
-    public int IconIndex { get; private set; } = -1;
+    internal bool IsDirectory { get; private set; }
 
     public ShellLinkHelper()
     {
-        this._shellLink = (IShellLinkW)new ShellLink();
-        this._persistFile = (IPersistFile)this._shellLink;
+        this._comObject = ShellLinkComObject.Create();
+        this._shellLink = this._comObject.ShellLink;
+        this._persistFile = this._comObject.PersistFile;
+        this._persistStream = this._comObject.PersistStream;
     }
 
     public void Dispose()
     {
-        Marshal.ReleaseComObject(this._shellLink);
+        this._comObject.Dispose();
     }
 
-    public string RetrieveTargetPath(string path)
+    internal unsafe string LoadTargetPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
             throw new FileNotFoundException("Shortcut file not found.", path);
         }
 
-        // Load the .lnk file
-        this._persistFile.Load(path, (int)STGM.STGM_READ);
+        fixed (char* shortcutPath = path)
+        {
+            Marshal.ThrowExceptionForHR(this._persistFile.Load(shortcutPath, 0));
+        }
 
-        // Comment for now, it's too slow; possibly revisit later when the list is updated on background
-        //// Resolve without UI
-        //try
-        //{
-        //    this._shellLink.Resolve(HWND.Null, (uint)(SLR_FLAGS.SLR_NO_UI | SLR_FLAGS.SLR_NOUPDATE));
-        //}
-        //catch (Exception ex)
-        //{
-        //    Logger.LogError(ex);
-        //}
-
-        // Retrieve target via GetPath using Span overload
-        var data = new WIN32_FIND_DATAW();
         Span<char> buffer = stackalloc char[MAX_PATH];
-        this._shellLink.GetPath(buffer, ref data, (int)SLGP_FLAGS.SLGP_RAWPATH);
-        var term = buffer.IndexOf('\0');
-        if (term < 0)
+        WIN32_FIND_DATAW findData = default;
+        int pathResult;
+        fixed (char* targetPath = buffer)
         {
-            term = buffer.Length;
+            pathResult = this._shellLink.GetPath(targetPath, buffer.Length, (nint)(&findData), (uint)SLGP_FLAGS.SLGP_RAWPATH);
         }
 
-        this.TargetPath = new string(buffer[..term]);
+        this.IsDirectory = (findData.dwFileAttributes & (uint)FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-        // Read description via Span overload
-        Span<char> descBuf = stackalloc char[MAX_PATH];
+        if (!this.TryGetTargetPathFromIdList(out var resolvedPath))
+        {
+            Marshal.ThrowExceptionForHR(pathResult);
+            resolvedPath = ReadNullTerminatedString(buffer);
+        }
+
+        this.TargetPath = resolvedPath;
+        return this.TargetPath;
+    }
+
+    internal unsafe ShellLinkTargetData LoadTargetData(IStructuredStorageStream stream, Action<string>? reportFailure = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        reportFailure ??= Logger.LogWarning;
+
+        var streamPointer = ComInterfaceMarshaller<IStructuredStorageStream>.ConvertToUnmanaged(stream);
         try
         {
-            this._shellLink.GetDescription(descBuf);
-            term = descBuf.IndexOf('\0');
-            if (term < 0)
-            {
-                term = descBuf.Length;
-            }
-
-            this.Description = new string(descBuf[..term]);
+            Marshal.ThrowExceptionForHR(this._persistStream.Load((nint)streamPointer));
         }
-        catch (COMException)
+        finally
         {
-            this.Description = string.Empty;
+            ComInterfaceMarshaller<IStructuredStorageStream>.Free(streamPointer);
         }
 
-        // Read arguments via Span overload
-        Span<char> argBuf = stackalloc char[MAX_PATH];
+        const int bufferLength = 32768;
+        var buffer = ArrayPool<char>.Shared.Rent(bufferLength);
+        string targetPath, arguments, description;
         try
         {
-            this._shellLink.GetArguments(argBuf);
-            term = argBuf.IndexOf('\0');
-            if (term < 0)
+            fixed (char* output = buffer)
             {
-                term = argBuf.Length;
+                buffer[0] = '\0';
+                targetPath = ReadField(this._shellLink.GetPath(output, bufferLength, 0, (uint)SLGP_FLAGS.SLGP_RAWPATH), "target path");
+                buffer[0] = '\0';
+                arguments = ReadField(this._shellLink.GetArguments(output, bufferLength), "arguments");
+                buffer[0] = '\0';
+                description = ReadField(this._shellLink.GetDescription(output, bufferLength), "description");
             }
-
-            this.Arguments = new string(argBuf[..term]);
-            this.HasArguments = this.Arguments.Length > 0;
         }
-        catch (COMException)
+        finally
         {
-            this.Arguments = string.Empty;
-            this.HasArguments = false;
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
         }
 
-        // get icon
-        Span<char> iconLocationBuffer = stackalloc char[MAX_PATH];
+        return new(this.TryGetTargetPathFromIdList(out var resolvedPath, reportFailure) ? resolvedPath : targetPath, arguments, description);
+
+        string ReadField(int result, string field)
+        {
+            if (result < 0)
+            {
+                reportFailure($"Failed to read Jump List {field}: HRESULT 0x{result:X8}");
+                return string.Empty;
+            }
+            return ReadNullTerminatedString(buffer.AsSpan(0, bufferLength));
+        }
+    }
+
+    private unsafe bool TryGetTargetPathFromIdList(out string path, Action<string>? reportFailure = null)
+    {
+        reportFailure ??= Logger.LogWarning;
+        // GetPath truncates at MAX_PATH even when given a larger buffer.
+        path = string.Empty;
+        nint itemIdList = 0;
         try
         {
-            this._shellLink.GetIconLocation(iconLocationBuffer, out var iconIndex);
-            term = iconLocationBuffer.IndexOf('\0');
-            if (term < 0)
+            var result = this._shellLink.GetIDList(&itemIdList);
+            if (result < 0)
             {
-                term = iconLocationBuffer.Length;
+                reportFailure($"Failed to read a shortcut item ID list: HRESULT 0x{result:X8}");
+                return false;
             }
 
-            var iconPathString = new string(iconLocationBuffer[..term]);
-            this.IconIndex = iconIndex;
-
-            if (string.IsNullOrEmpty(iconPathString) || !File.Exists(iconPathString))
-            {
-                var r = GetFileIconLocation(path);
-                if (!string.IsNullOrWhiteSpace(r.IconPath))
-                {
-                    this.IconPath = r.IconPath;
-                    this.IconIndex = r.IconIndex;
-                }
-                else
-
-                    // Icon path is invalid, get the default icon for the target file type
-                if (!string.IsNullOrEmpty(this.TargetPath) && File.Exists(this.TargetPath))
-                {
-                    // Get the default icon for the target file
-                    var extension = Path.GetExtension(this.TargetPath);
-                    if (!string.IsNullOrEmpty(extension))
-                    {
-                        // Use SHGetFileInfo to get the default icon path
-                        var tempExtIcon = GetFileIconLocation(extension);
-                        if (!string.IsNullOrEmpty(tempExtIcon.IconPath))
-                        {
-                            this.IconPath = tempExtIcon.IconPath;
-                            this.IconIndex = tempExtIcon.IconIndex;
-                        }
-                        else
-                        {
-                            // If extension icon not found, get icon for the file specifically
-                            var tempFileIcon = GetFileIconLocation(this.TargetPath);
-                            this.IconPath = tempFileIcon.IconPath;
-                            this.IconIndex = tempFileIcon.IconIndex;
-                        }
-                    }
-                    else
-                    {
-                        // Direct file icon lookup if no extension
-                        var tempIcon = GetFileIconLocation(this.TargetPath);
-                        this.IconPath = tempIcon.IconPath;
-                        this.IconIndex = tempIcon.IconIndex;
-                    }
-                }
-                else
-                {
-                    // Default to shell32.dll if target path is invalid too
-                    this.IconPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                        "shell32.dll");
-                    this.IconIndex = 0; // Default icon
-                }
-            }
-            else
-            {
-                // The icon path from the shortcut is valid
-                this.IconPath = iconPathString;
-            }
+            return ShellItemIdListPathResolver.TryResolve(itemIdList, out path);
         }
-        catch (COMException)
+        finally
         {
-            this.IconPath = null;
-            this.IconIndex = -1;
+            if (itemIdList != 0)
+            {
+                Marshal.FreeCoTaskMem(itemIdList);
+            }
         }
+    }
 
+    private static string ReadNullTerminatedString(ReadOnlySpan<char> value)
+    {
+        var terminator = value.IndexOf('\0');
+        return new(terminator < 0 ? value : value[..terminator]);
+    }
+
+    internal string RetrieveDisplayName(string path)
+    {
         try
         {
             this.DisplayName = GetLinkTargetDisplayName(this._shellLink);
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex.ToString());
+            Logger.LogWarning($"Failed to read a shortcut display name {ExceptionDiagnostics.Format(ex)}");
             this.DisplayName = Path.GetFileNameWithoutExtension(path);
 #if DEBUG
             this.DisplayName = "C: " + this.DisplayName;
 #endif
         }
 
-        return this.TargetPath;
+        return this.DisplayName;
     }
 
     private static unsafe string GetLinkTargetDisplayName(IShellLinkW link)
     {
-        ITEMIDLIST* ppidl = null;
+        nint itemIdList = 0;
+        PWSTR pwsz = default;
+
         try
         {
-            link.GetIDList(out ppidl);
-            SHGetNameFromIDList(*ppidl, SIGDN.SIGDN_NORMALDISPLAY, out var pwsz)
+            Marshal.ThrowExceptionForHR(link.GetIDList(&itemIdList));
+            if (itemIdList == 0)
+            {
+                throw new InvalidOperationException("The shortcut has no target item ID list.");
+            }
+
+            SHGetNameFromIDList(*(ITEMIDLIST*)itemIdList, SIGDN.SIGDN_NORMALDISPLAY, out pwsz)
                 .ThrowOnFailure();
-            var result = new string(pwsz.AsSpan());
-            return result;
+
+            return new string(pwsz.AsSpan());
         }
         finally
         {
-            if (ppidl != null)
+            if (pwsz != null)
             {
-                Marshal.FreeCoTaskMem((IntPtr)ppidl);
+                Marshal.FreeCoTaskMem((IntPtr)pwsz.Value);
+            }
+
+            if (itemIdList != 0)
+            {
+                Marshal.FreeCoTaskMem(itemIdList);
             }
         }
     }
 
-    private static unsafe (string IconPath, int IconIndex) GetFileIconLocation(string fileOrExtension)
-    {
-        var fileInfo = new SHFILEINFOW();
-        var fileInfoResult = SHGetFileInfo(
-            fileOrExtension,
-            0,
-            &fileInfo,
-            (uint)sizeof(SHFILEINFOW),
-            SHGFI_FLAGS.SHGFI_ICONLOCATION);
 
-        if (fileInfoResult == nuint.Zero)
-        {
-            return (Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shell32.dll"), 0);
-        }
-
-        // Extract the icon path from the szDisplayName field
-        var iconPath = new string(fileInfo.szDisplayName.Value);
-        if (string.IsNullOrEmpty(iconPath))
-        {
-            return (Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shell32.dll"), 0);
-        }
-
-        // The icon index is stored in the iIcon field
-        return (iconPath, fileInfo.iIcon);
-    }
-
-    [Flags]
-    internal enum SLR_FLAGS
-    {
-        /// <summary>
-        /// Do not display a dialog box if the link cannot be resolved. When SLR_NO_UI is set,
-        /// the high-order word of fFlags can be set to a time-out value that specifies the
-        /// maximum amount of time to be spent resolving the link. The function returns if the
-        /// link cannot be resolved within the time-out duration. If the high-order word is set
-        /// to zero, the time-out duration will be set to the default value of 3,000 milliseconds
-        /// (3 seconds). To specify a value, set the high word of fFlags to the desired time-out
-        /// duration, in milliseconds.
-        /// </summary>
-        SLR_NO_UI = 0x01,
-
-        /// <summary>Obsolete and no longer used</summary>
-        SLR_ANY_MATCH = 0x02,
-
-        /// <summary>
-        /// If the link object has changed, update its path and list of identifiers.
-        /// If SLR_UPDATE is set, you do not need to call IPersistFile::IsDirty to determine
-        /// whether or not the link object has changed.
-        /// </summary>
-        SLR_UPDATE = 0x04,
-
-        /// <summary>Do not update the link information</summary>
-        SLR_NOUPDATE = 0x08,
-
-        /// <summary>Do not execute the search heuristics</summary>
-        SLR_NOSEARCH = 0x10,
-
-        /// <summary>Do not use distributed link tracking</summary>
-        SLR_NOTRACK = 0x20,
-
-        /// <summary>
-        /// Disable distributed link tracking. By default, distributed link tracking tracks
-        /// removable media across multiple devices based on the volume name. It also uses the
-        /// Universal Naming Convention (UNC) path to track remote file systems whose drive letter
-        /// has changed. Setting SLR_NOLINKINFO disables both types of tracking.
-        /// </summary>
-        SLR_NOLINKINFO = 0x40,
-
-        /// <summary>Call the Microsoft Windows Installer</summary>
-        SLR_INVOKE_MSI = 0x80
-    }
 }
+
+internal readonly record struct ShellLinkTargetData(
+    string TargetPath,
+    string Arguments,
+    string Description);

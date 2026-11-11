@@ -10,6 +10,22 @@ internal static class PathHelper
 {
     internal static bool IsNetworkPath(this string path)
     {
-        return path.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase);
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            path = path[4..];
+        }
+
+        if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var root = Path.GetPathRoot(path);
+        return root is { Length: >= 2 } && root[1] == ':' && new DriveInfo(root).DriveType == DriveType.Network;
     }
 }

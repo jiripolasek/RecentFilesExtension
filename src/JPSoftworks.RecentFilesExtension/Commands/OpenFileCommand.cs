@@ -4,7 +4,6 @@
 // 
 // ------------------------------------------------------------
 
-using System.ComponentModel;
 using System.Diagnostics;
 using JPSoftworks.RecentFilesExtension.Helpers;
 using JPSoftworks.RecentFilesExtension.Model;
@@ -19,8 +18,9 @@ internal sealed partial class OpenFileCommand : InvokableCommand
     internal OpenFileCommand(IRecentFile item)
     {
         this._item = item;
-        this.Name = item.IsDirectory() ? Strings.Command_OpenFolder! : Strings.Command_OpenFile!;
-        this.Icon = Icons.OpenFile;
+        var isDirectory = item.IsDirectory();
+        this.Name = isDirectory ? Strings.Command_OpenFolder! : Strings.Command_OpenFile!;
+        this.Icon = isDirectory ? Icons.FolderOpen : Icons.OpenFile;
     }
 
     public override CommandResult Invoke()
@@ -34,9 +34,10 @@ internal sealed partial class OpenFileCommand : InvokableCommand
             {
                 process.Start();
             }
-            catch (Win32Exception ex)
+            catch (Exception ex)
             {
-                Logger.LogError($"Unable to open {this._item.FullPath}", ex);
+                Logger.LogError($"Unable to open the recent file {ExceptionDiagnostics.Format(ex)}");
+                return CommandResult.KeepOpen();
             }
         }
 
