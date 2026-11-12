@@ -13,7 +13,7 @@
     <CmdPalPackageExecutable>JPSoftworks.RecentFilesExtension/JPSoftworks.RecentFilesExtension.exe</CmdPalPackageExecutable>
     <CmdPalPackageProjectGuid>87772a2c-b322-4ef1-8c21-609ebd0f825c</CmdPalPackageProjectGuid>
 
-    <CmdPalTargetFramework>net10.0-windows10.0.26100.0</CmdPalTargetFramework>
+    <CmdPalTargetFramework>net11.0-windows10.0.26100.0</CmdPalTargetFramework>
     <CmdPalTargetPlatformVersion>10.0.26100.0</CmdPalTargetPlatformVersion>
     <CmdPalTargetPlatformMinVersion>10.0.19041.0</CmdPalTargetPlatformMinVersion>
     <CmdPalRuntimeIdentifiers>win-x64;win-arm64</CmdPalRuntimeIdentifiers>

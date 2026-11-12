@@ -17,7 +17,7 @@ try {
         $appDirectory = Join-Path $repositoryRoot "src/$name"
         New-Item -ItemType Directory -Path $appDirectory -Force | Out-Null
         $appPath = Join-Path $appDirectory 'Example.csproj'
-        Set-Content -LiteralPath $appPath -Value '<Project><PropertyGroup><TargetFramework>net10.0-windows10.0.22621.0</TargetFramework><TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion></PropertyGroup></Project>'
+        Set-Content -LiteralPath $appPath -Value '<Project><PropertyGroup><TargetFramework>net11.0-windows10.0.22621.0</TargetFramework><TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion></PropertyGroup></Project>'
         $artifactsPath = "output/$name"
         $generated = & (Join-Path $PSScriptRoot 'Initialize-WapProject.ps1') -RepositoryRoot $repositoryRoot -AppProjectPath $appPath `
             -ExtensionPropsPath (Join-Path $repositoryRoot "eng/$name/CmdPal.Extension.props") -ArtifactsPath $artifactsPath `

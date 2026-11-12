@@ -22,7 +22,7 @@ This is the path from a fresh host/VM setup to testing one VM. **Host** means
 your development PC; **guest** means the Windows VM. No `HyperV.config.psd1`
 file is needed for this path.
 
-1. **Host: install the tools.** Install PowerShell 7, the .NET 10 SDK, and
+1. **Host: install the tools.** Install PowerShell 7, the .NET 11 SDK, and
    Visual Studio with DesktopBridge/MSIX Packaging Tools and a Windows SDK
    containing MakeAppx and SignTool ([build requirements](WapPackaging.md#build-requirements)).
    [Enable Hyper-V](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/get-started/Install-Hyper-V)

@@ -3,7 +3,7 @@
     DefaultPlatform      = 'x64'
 
     Workflow = @{
-        DotNetVersion = '10.0.x'
+        DotNetVersion = '11.0.x'
         WindowsSdkVersion = '10.0.26100.0'
         WingetPackageIdentifier = 'JiriPolasek.RecentFilesforCommandPalette'
     }

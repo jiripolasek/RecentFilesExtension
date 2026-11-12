@@ -65,7 +65,7 @@ matching projects returns an empty array. Configurations with discovered test
 projects must include x64 because the CI test host is x64.
 
 The Windows jobs use `windows-2025-vs2026`; packaging selects MSBuild
-18.x. The current configuration selects .NET `10.0.x`, packaging SDK
+18.x. The current configuration selects .NET `11.0.x`, packaging SDK
 `10.0.26100.0`, x64, and ARM64. The packaging SDK does not change the manifest's
 minimum Windows version.
 

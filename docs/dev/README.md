@@ -16,7 +16,7 @@ the repository root in PowerShell 7 on Windows.
 
 ## Requirements
 
-- .NET 10 SDK and PowerShell 7.
+- .NET 11 SDK and PowerShell 7.
 - Visual Studio MSBuild with DesktopBridge/MSIX Packaging Tools and a Windows
   SDK containing MakeAppx and SignTool. See the [packaging requirements](WapPackaging.md#build-requirements).
 - PowerToys on the machine where you test the extension UI.
