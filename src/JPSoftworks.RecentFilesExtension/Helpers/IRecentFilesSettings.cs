@@ -24,5 +24,7 @@ internal interface IRecentFilesSettings
 
     bool ShowFileTypeTags { get; }
 
+    bool UseShellIcons { get; }
+
     bool ShowDetails { get; set; }
 }

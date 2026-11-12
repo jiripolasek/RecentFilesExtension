@@ -26,6 +26,8 @@ internal sealed class TestRecentFilesSettings : IRecentFilesSettings
 
     public bool ShowFileTypeTags { get; set; }
 
+    public bool UseShellIcons { get; set; }
+
     public bool ShowDetails { get; set; }
 
     public void RaiseSourcesChanged()

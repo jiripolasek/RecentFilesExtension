@@ -331,6 +331,24 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Let this host load local file icons and thumbnails. Enable this only if your build supports shell icons..
+        /// </summary>
+        internal static string Settings_UseShellIcons_Subtitle {
+            get {
+                return ResourceManager.GetString("Settings_UseShellIcons_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Load file icons in Command Palette (preview).
+        /// </summary>
+        internal static string Settings_UseShellIcons_Title {
+            get {
+                return ResourceManager.GetString("Settings_UseShellIcons_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Gallery.
         /// </summary>
         internal static string Settings_ViewMode_Gallery {

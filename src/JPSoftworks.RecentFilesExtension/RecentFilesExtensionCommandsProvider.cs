@@ -12,18 +12,21 @@ namespace JPSoftworks.RecentFilesExtension;
 
 public sealed partial class RecentFilesExtensionCommandsProvider : CommandProvider
 {
-    private readonly SettingsManager _settingsManager = new();
     private readonly RecentFilesExtensionPage _page;
     private readonly ICommandItem[] _commands;
     private bool _isDisposed;
 
-    public RecentFilesExtensionCommandsProvider()
+    public RecentFilesExtensionCommandsProvider() : this(new SettingsManager(), ShellIconSupport.Unknown)
+    {
+    }
+
+    internal RecentFilesExtensionCommandsProvider(SettingsManager settings, ShellIconSupport support)
     {
         this.Id = "JPSoftworks.CmdPal.RecentFiles";
         this.DisplayName = Strings.Page_RecentFiles!;
         this.Icon = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
-        this.Settings = this._settingsManager.Settings;
-        this._page = new(this._settingsManager);
+        this.Settings = settings.GetHostSettings(support);
+        this._page = new(settings, shellIconSupport: support);
         this._commands =
         [
             new CommandItem(this._page)

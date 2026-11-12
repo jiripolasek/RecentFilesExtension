@@ -5,6 +5,7 @@
 // ------------------------------------------------------------
 
 using JPSoftworks.RecentFilesExtension.Helpers;
+using JPSoftworks.RecentFilesExtension.Model;
 using JPSoftworks.RecentFilesExtension.Resources;
 
 namespace JPSoftworks.RecentFilesExtension.Pages;
@@ -15,19 +16,21 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private static readonly CommandItem NothingFoundWithQueryEmptyContent;
 
     private readonly IRecentFilesSettings _settings;
-    private readonly IContextItem[] _appearanceCommands;
+    private readonly ShellIconSupport _shellIconSupport;
+    private readonly Lazy<IContextItem[]> _appearanceCommands;
     private readonly IRecentFilesProvider _recentFilesProvider;
     private readonly IRecentFilesLoader _loader;
     private readonly RecentFilesFilters _filters;
     private readonly Lock _syncRoot = new();
-    private CancellationTokenSource _searchCancellationTokenSource = new();
+    private Dictionary<string, RecentFileListItem> _itemsByPath = new(StringComparer.Ordinal);
 
     private Guid _searchToken = Guid.Empty;
-    private List<IListItem> _loadedItems = [];
+    private List<RecentFileListItem> _loadedItems = [];
     private bool _sourceChanged = true;
     private bool _isDisposed;
 
-    public RecentFilesExtensionPage(IRecentFilesSettings settings, IRecentFilesProvider? recentFilesProvider = null)
+    public RecentFilesExtensionPage(IRecentFilesSettings settings, IRecentFilesProvider? recentFilesProvider = null,
+        ShellIconSupport shellIconSupport = ShellIconSupport.Unknown)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -37,10 +40,11 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         this.Id = "com.jpsoftworks.cmdpal.recentfiles";
 
         this._settings = settings;
-        this._appearanceCommands =
+        this._shellIconSupport = shellIconSupport;
+        this._appearanceCommands = new(() =>
         [
             new Separator(),
-            new CommandContextItem(new AnonymousCommand(() => this._settings.ViewMode = this._settings.ViewMode switch
+            new CommandContextItem(new AnonymousCommand(() => settings.ViewMode = settings.ViewMode switch
             {
                 "list" => "grid",
                 "grid" => "gallery",
@@ -51,13 +55,13 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                 Icon = Icons.ToggleViewMode,
                 Result = CommandResult.KeepOpen(),
             }) { RequestedShortcut = KeyChords.ToggleViewMode },
-            new CommandContextItem(new AnonymousCommand(() => this._settings.ShowDetails = !this._settings.ShowDetails)
+            new CommandContextItem(new AnonymousCommand(() => settings.ShowDetails = !settings.ShowDetails)
             {
                 Name = Strings.Command_ToggleDetails,
                 Icon = Icons.ToggleDetails,
                 Result = CommandResult.KeepOpen(),
             }) { RequestedShortcut = KeyChords.ToggleDetails },
-        ];
+        ]);
         this._recentFilesProvider = recentFilesProvider ?? new RecentFilesProvider(settings);
         this._loader = new RecentFilesLoader(this._recentFilesProvider);
         this._loader.SourceChanged += this.OnSourceChanged;
@@ -108,7 +112,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                 return;
             }
 
-            items = this._loadedItems.OfType<RecentFileListItem>().ToArray();
+            items = [.. this._loadedItems];
         }
 
         this.GridProperties = this._settings.ViewMode switch
@@ -120,18 +124,42 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         this.ShowDetails = this._settings.ShowDetails;
         foreach (var item in items)
         {
-            item.ApplyAppearance(this._settings);
+            item.ApplyAppearance(this._settings, this._shellIconSupport);
         }
     }
 
-    private void OnSourceChanged(object? sender, EventArgs e)
+    private void OnSourceChanged(object? sender, IList<IRecentFile> files)
     {
         lock (this._syncRoot)
         {
-            if (!this._isDisposed)
+            if (this._isDisposed)
             {
-                this._sourceChanged = true;
+                return;
             }
+
+            this._sourceChanged = true;
+            if (this._itemsByPath.Count == 0)
+            {
+                return;
+            }
+
+            var retained = new Dictionary<string, RecentFileListItem>(StringComparer.Ordinal);
+            foreach (var file in files)
+            {
+                try
+                {
+                    var path = file.TargetPath;
+                    if (this._itemsByPath.TryGetValue(path, out var item) && item.Matches(file))
+                    {
+                        retained[path] = item;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"Failed to read a refreshed file's path {ExceptionDiagnostics.Summarize(ex)}");
+                }
+            }
+            this._itemsByPath = retained;
         }
     }
 
@@ -187,14 +215,11 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             var onlyFolders = filter is FoldersFilter;
 
             var searchToken = Guid.NewGuid();
-            var nextCancellationTokenSource = new CancellationTokenSource();
-            CancellationTokenSource previousCancellationTokenSource;
             Exception? restartFailure = null;
             lock (this._syncRoot)
             {
                 if (this._isDisposed)
                 {
-                    nextCancellationTokenSource.Dispose();
                     return;
                 }
 
@@ -209,15 +234,11 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                     restartFailure = ex;
                 }
 
-                previousCancellationTokenSource = this._searchCancellationTokenSource;
-                this._searchCancellationTokenSource = nextCancellationTokenSource;
                 this._searchToken = searchToken;
                 this._sourceChanged = false;
                 this._loadedItems = [];
             }
 
-            previousCancellationTokenSource.Cancel();
-            previousCancellationTokenSource.Dispose();
             if (restartFailure is not null)
             {
                 Logger.LogError($"Failed to search recent files {ExceptionDiagnostics.Format(restartFailure)}");
@@ -243,8 +264,6 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     private void LoadMore(Guid? expectedSearchToken)
     {
-        CancellationToken cancellationToken = default;
-
         try
         {
             this.IsLoading = true;
@@ -259,25 +278,21 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
                     return;
                 }
 
-                cancellationToken = this._searchCancellationTokenSource.Token;
-                var items = this._loader.LoadNextPage(this._searchToken, cancellationToken);
-                foreach (var item in items)
+                foreach (var file in this._loader.LoadNextPage(this._searchToken))
                 {
-                    item.MoreCommands = [.. item.MoreCommands, .. this._appearanceCommands];
-                    item.ApplyAppearance(this._settings);
+                    if (!this._itemsByPath.TryGetValue(file.TargetPath, out var item) || !item.Matches(file))
+                    {
+                        item = new RecentFileListItem(file, this._appearanceCommands);
+                        this._itemsByPath[file.TargetPath] = item;
+                    }
+                    this._loadedItems.Add(item);
                 }
-
-                this._loadedItems.AddRange(items);
                 itemCount = this._loadedItems.Count;
                 hasMore = this._loader.HasMore;
             }
 
             this.HasMoreItems = hasMore;
             this.RaiseItemsChanged(itemCount);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Expected when a search is superseded or the page is disposed.
         }
         catch (Exception ex)
         {
@@ -318,7 +333,12 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
         IListItem[] items;
         lock (this._syncRoot)
         {
-            items = this._loadedItems.ToArray();
+            items = [.. this._loadedItems];
+        }
+
+        foreach (RecentFileListItem item in items)
+        {
+            item.ApplyAppearance(this._settings, this._shellIconSupport);
         }
 
         var newEmptyContent = string.IsNullOrWhiteSpace(this.SearchText)
@@ -338,7 +358,6 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
 
     public void Dispose()
     {
-        CancellationTokenSource searchCancellationTokenSource;
         lock (this._syncRoot)
         {
             if (this._isDisposed)
@@ -347,12 +366,11 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
             }
 
             this._isDisposed = true;
-            searchCancellationTokenSource = this._searchCancellationTokenSource;
+            this._loadedItems.Clear();
+            this._itemsByPath.Clear();
         }
 
         this._settings.AppearanceChanged -= this.OnAppearanceChanged;
-        searchCancellationTokenSource.Cancel();
-        searchCancellationTokenSource.Dispose();
         this._loader.SourceChanged -= this.OnSourceChanged;
         this._loader.InitializationComplete -= this.OnSourceInitialized;
         this._loader.Dispose();

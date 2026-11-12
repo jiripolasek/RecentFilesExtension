@@ -64,29 +64,53 @@ internal sealed class SettingsManager : JsonSettingsManager, IRecentFilesSetting
         Strings.Settings_ShowDetails_Subtitle,
         false);
 
+    private readonly ToggleSetting _useShellIcons = new(
+        Namespaced("Appearance.UseShellIcons"),
+        Strings.Settings_UseShellIcons_Title,
+        Strings.Settings_UseShellIcons_Subtitle,
+        false);
+
+    private readonly Lazy<Settings> _knownHostSettings;
+
     private (bool OpenSaveMru, bool OfficeRecentFiles) _lastSources;
 
     public SettingsManager(string? settingsPath = null)
     {
         this.FilePath = settingsPath ?? SettingsJsonPath();
-        this.Settings.Add(new SettingsGroupHeader(
-            Namespaced("Layout.Sources"),
-            Resource("Settings_Group_Sources"),
-            showSeparator: false));
-        this.Settings.Add(this._includeOpenSaveMru);
-        this.Settings.Add(this._includeOfficeRecentFiles);
-        this.Settings.Add(new SettingsGroupHeader(
-            Namespaced("Layout.Appearance"),
-            Strings.Settings_Group_Appearance));
-        this.Settings.Add(this._viewMode);
-        this.Settings.Add(this._hideFileExtensions);
-        this.Settings.Add(this._showFileTypeInSubtitle);
-        this.Settings.Add(this._showFileTypeTags);
-        this.Settings.Add(this._showDetails);
+        this.AddCommonSettings(this.Settings);
+        this.Settings.Add(this._useShellIcons);
+        this._knownHostSettings = new(() =>
+        {
+            var settings = new Settings();
+            this.AddCommonSettings(settings);
+            settings.SettingsChanged += this.OnSettingsChanged;
+            return settings;
+        });
 
         this.LoadSettings();
         this._lastSources = (this.IncludeOpenSaveMru, this.IncludeOfficeRecentFiles);
         this.Settings.SettingsChanged += this.OnSettingsChanged;
+    }
+
+    internal Settings GetHostSettings(ShellIconSupport support) =>
+        support == ShellIconSupport.Unknown ? this.Settings : this._knownHostSettings.Value;
+
+    private void AddCommonSettings(Settings settings)
+    {
+        settings.Add(new SettingsGroupHeader(
+            Namespaced("Layout.Sources"),
+            Resource("Settings_Group_Sources"),
+            showSeparator: false));
+        settings.Add(this._includeOpenSaveMru);
+        settings.Add(this._includeOfficeRecentFiles);
+        settings.Add(new SettingsGroupHeader(
+            Namespaced("Layout.Appearance"),
+            Strings.Settings_Group_Appearance));
+        settings.Add(this._viewMode);
+        settings.Add(this._hideFileExtensions);
+        settings.Add(this._showFileTypeInSubtitle);
+        settings.Add(this._showFileTypeTags);
+        settings.Add(this._showDetails);
     }
 
     public event EventHandler? SourcesChanged;
@@ -195,6 +219,8 @@ internal sealed class SettingsManager : JsonSettingsManager, IRecentFilesSetting
     public bool ShowFileTypeInSubtitle => this._showFileTypeInSubtitle.Value;
 
     public bool ShowFileTypeTags => this._showFileTypeTags.Value;
+
+    public bool UseShellIcons => this._useShellIcons.Value;
 
     public bool ShowDetails
     {

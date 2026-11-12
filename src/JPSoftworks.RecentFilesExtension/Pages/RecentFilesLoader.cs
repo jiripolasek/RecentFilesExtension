@@ -25,7 +25,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     /// <summary>
     /// Raised whenever the underlying recent‐files list changes (e.g. you might clear your UI and restart).
     /// </summary>
-    public event EventHandler? SourceChanged;
+    public event EventHandler<IList<IRecentFile>>? SourceChanged;
 
     /// <summary>
     /// Raised when the loader has completed its initial setup (after provider finishes loading).
@@ -98,7 +98,7 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
 
         if (isInitialized)
         {
-            this.SourceChanged?.Invoke(this, EventArgs.Empty);
+            this.SourceChanged?.Invoke(this, newList);
         }
     }
 
@@ -258,12 +258,10 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
     }
 
     /// <summary>
-    /// Synchronous version of LoadNextPage for backward compatibility.
+    /// Returns the next slice of file metadata for the current search.
     /// </summary>
-    public IList<RecentFileListItem> LoadNextPage(Guid searchToken, CancellationToken ct = default)
+    public IList<IRecentFile> LoadNextPage(Guid searchToken)
     {
-        List<IRecentFile> slice;
-
         lock (this._syncRoot)
         {
             if (this._currentSearchToken != searchToken)
@@ -271,20 +269,9 @@ internal sealed partial class RecentFilesLoader : IRecentFilesLoader
                 return [];
             }
 
-            slice = this._filteredFiles.Skip(this._cursor).Take(this._pageSize).ToList();
+            var slice = this._filteredFiles.GetRange(this._cursor, Math.Min(this._pageSize, this._filteredFiles.Count - this._cursor));
             this._cursor += slice.Count;
-        }
-
-        var entries = new List<RecentFileListItem>(slice.Count);
-        foreach (var shortcut in slice)
-        {
-            ct.ThrowIfCancellationRequested();
-            entries.Add(new(shortcut, ct));
-        }
-
-        lock (this._syncRoot)
-        {
-            return this._currentSearchToken != searchToken ? [] : entries;
+            return slice;
         }
     }
 

@@ -24,7 +24,7 @@ public sealed class RecentFilesAppearanceTests
         var token = Guid.NewGuid();
         loader.Restart(new(string.Empty, [], [], @"C:\Users\example\Documents", false), token);
 
-        Assert.AreEqual("report%41.docx", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual("report%41.docx", loader.LoadNextPage(token).Single().DisplayName);
         Assert.AreEqual(@"C:\Users\example\Documents\report%41.docx", file.TargetPath);
     }
 
@@ -148,6 +148,29 @@ public sealed class RecentFilesAppearanceTests
             Assert.HasCount(1, page.GetItems());
             Assert.AreEqual("Reports.2026", page.GetItems()[0].Title);
         }).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [TestMethod]
+    public void SideBySideHostsKeepTheirIconPolicyWhenThePreviewChanges()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "report.pdf");
+        var file = new RecentPathFile(path, DateTimeOffset.UnixEpoch);
+        var settings = new TestRecentFilesSettings();
+        using var modern = new RecentFilesExtensionPage(settings, new StubProvider(file), ShellIconSupport.Supported);
+        using var legacy = new RecentFilesExtensionPage(settings, new StubProvider(file), ShellIconSupport.Unsupported);
+        using var unknown = new RecentFilesExtensionPage(settings, new StubProvider(file));
+        var row = unknown.GetItems().Single();
+        var shellIcon = $"|ShellItemIcon|v1;{path.Length}:{path}";
+        Assert.AreEqual(shellIcon, modern.GetItems().Single().Icon.Light.Icon);
+        Assert.IsNotNull(legacy.GetItems().Single().Icon.Light.Data);
+        Assert.IsNotNull(row.Icon.Light.Data);
+
+        settings.UseShellIcons = true;
+        settings.RaiseAppearanceChanged();
+        Assert.AreSame(row, unknown.GetItems().Single());
+        Assert.AreEqual(shellIcon, row.Icon.Light.Icon);
+        Assert.AreEqual(shellIcon, modern.GetItems().Single().Icon.Light.Icon);
+        Assert.IsNotNull(legacy.GetItems().Single().Icon.Light.Data);
     }
 
     [TestMethod]
@@ -297,6 +320,85 @@ public sealed class RecentFilesAppearanceTests
         }
     }
 
+    [TestMethod]
+    public void AppearanceChangesUpdateDisplayedRowsEvenAfterARefreshReplacesThem()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "displayed-report.pdf");
+        var time = DateTimeOffset.UnixEpoch;
+        var provider = new StubProvider(new RecentPathFile(path, time));
+        var settings = new TestRecentFilesSettings();
+        using var page = new RecentFilesExtensionPage(settings, provider, ShellIconSupport.Supported);
+        var displayed = page.GetItems().Single();
+
+        provider.Replace(new RecentPathFile(path, time.AddHours(1)));
+        settings.ViewMode = "gallery";
+        settings.HideFileExtensions = true;
+        settings.ShowDetails = true;
+        settings.RaiseAppearanceChanged();
+
+        Assert.AreEqual("displayed-report", displayed.Title);
+        Assert.AreEqual($"|JumboShellItemIcon|v1;{path.Length}:{path}", displayed.Icon.Light.Icon);
+        Assert.IsNotNull(displayed.Details);
+        Assert.AreNotSame(displayed, page.GetItems().Single());
+    }
+
+    [TestMethod]
+    public void CachedRowsApplyAppearanceWhenShownAndReuseTheirTagsAcrossSearches()
+    {
+        var alpha = new RecentPathFile("https://example.invalid/alpha.pdf", DateTimeOffset.UnixEpoch);
+        var beta = new RecentPathFile("https://example.invalid/beta.pdf", DateTimeOffset.UnixEpoch);
+        var settings = new TestRecentFilesSettings { ShowFileTypeTags = true };
+        using var page = new RecentFilesExtensionPage(settings, new StubProvider(alpha, beta));
+        var row = page.GetItems().Single(item => item.Title == "alpha.pdf");
+        var tag = row.Tags.Single();
+
+        page.SearchText = "beta";
+        settings.HideFileExtensions = true;
+        settings.RaiseAppearanceChanged();
+        Assert.AreEqual("alpha.pdf", row.Title);
+
+        page.SearchText = "alpha";
+        Assert.AreSame(row, page.GetItems().Single());
+        Assert.AreEqual("alpha", row.Title);
+        Assert.AreSame(tag, row.Tags.Single());
+
+        page.SearchText = "beta";
+        page.SearchText = "alpha";
+        Assert.AreSame(tag, page.GetItems().Single().Tags.Single());
+    }
+
+    [TestMethod]
+    public void SearchesReuseRowsAndRefreshReplacesOnlyChangedOrRemovedFiles()
+    {
+        var time = DateTimeOffset.UnixEpoch;
+        var alpha = new RecentPathFile("https://example.invalid/alpha.pdf", time);
+        var beta = new RecentPathFile("https://example.invalid/beta.pdf", time);
+        var provider = new StubProvider(alpha, beta);
+        var settings = new TestRecentFilesSettings { ShowDetails = true };
+        using var page = new RecentFilesExtensionPage(settings, provider);
+        var original = page.GetItems();
+        var menu = original[0].MoreCommands;
+        var details = original[0].Details;
+
+        page.SearchText = "beta";
+        Assert.AreSame(original[1], page.GetItems().Single());
+        provider.Replace(new RecentPathFile(alpha.TargetPath, time), new RecentPathFile(beta.TargetPath, time.AddHours(1)));
+        Assert.AreNotSame(original[1], page.GetItems().Single());
+        settings.HideFileExtensions = true;
+        settings.RaiseAppearanceChanged();
+        page.SearchText = "alpha";
+        var result = page.GetItems().Single();
+        Assert.AreSame(original[0], result);
+        Assert.AreEqual("alpha", result.Title);
+        Assert.AreSame(menu, result.MoreCommands);
+        Assert.AreSame(details, result.Details);
+
+        provider.Replace(beta);
+        Assert.IsEmpty(page.GetItems());
+        provider.Replace(alpha, beta);
+        Assert.AreNotSame(original[0], page.GetItems().Single());
+    }
+
     private sealed class StubProvider(params IRecentFile[] files) : IRecentFilesProvider
     {
         public event EventHandler<IList<IRecentFile>>? RecentFilesChanged;
@@ -317,5 +419,11 @@ public sealed class RecentFilesAppearanceTests
         }
 
         public void RaiseChanged() => this.RecentFilesChanged?.Invoke(this, files);
+
+        public void Replace(params IRecentFile[] updated)
+        {
+            files = updated;
+            this.RaiseChanged();
+        }
     }
 }

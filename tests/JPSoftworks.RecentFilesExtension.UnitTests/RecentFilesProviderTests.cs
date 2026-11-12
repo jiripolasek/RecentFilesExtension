@@ -24,7 +24,7 @@ public sealed class RecentFilesProviderTests
         Assert.IsTrue(await provider.WaitForInitialLoadAsync(TimeSpan.FromSeconds(5)));
         var token = Guid.NewGuid();
         loader.Restart(new("*.txt", [], [], string.Empty, false), token);
-        Assert.AreEqual("one.txt", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual("one.txt", loader.LoadNextPage(token).Single().DisplayName);
 
         var invalidToken = Guid.NewGuid();
         loader.Restart(new("*[a-]", [], [], string.Empty, false), invalidToken);
@@ -40,14 +40,14 @@ public sealed class RecentFilesProviderTests
         Assert.AreEqual(1, logs.Messages.Count(entry => entry.Message.Contains("using a literal search", StringComparison.Ordinal)));
         Assert.IsFalse(logs.Messages.Any(entry => entry.Message.Contains("*[a-]", StringComparison.Ordinal)));
         loader.Restart(new("*.txt", [], [], string.Empty, false), token);
-        Assert.AreEqual("one.txt", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual("one.txt", loader.LoadNextPage(token).Single().DisplayName);
 
         var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         loader.SourceChanged += (_, _) => changed.TrySetResult();
         source.Files = [File("three.txt"), File("ignore.pdf")];
         source.RaiseChanged();
         await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.AreEqual("three.txt", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual("three.txt", loader.LoadNextPage(token).Single().DisplayName);
         Assert.IsFalse(loader.HasMore);
     }
 
@@ -134,7 +134,7 @@ public sealed class RecentFilesProviderTests
         for (var index = 0; index < 3; index++)
         {
             var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            EventHandler changed = (_, _) => refreshed.TrySetResult();
+            EventHandler<IList<IRecentFile>> changed = (_, _) => refreshed.TrySetResult();
             loader.SourceChanged += changed;
             source.Files = index < 2 ? [new UnreadableFile(), File($"update{index}.txt")] : [File("recovered.txt")];
             source.RaiseChanged();
@@ -146,7 +146,7 @@ public sealed class RecentFilesProviderTests
                 Assert.IsFalse(loader.HasMore);
             }
         }
-        Assert.AreEqual("recovered.txt", loader.LoadNextPage(token).Single().Title);
+        Assert.AreEqual("recovered.txt", loader.LoadNextPage(token).Single().DisplayName);
         Assert.IsFalse(logs.Messages.Any(entry => entry.Message.Contains("Failed to refresh recent files", StringComparison.Ordinal)));
     }
 

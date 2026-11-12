@@ -290,29 +290,32 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
 
         for (var i = 0; i < first.Count; i++)
         {
-            var firstItem = first[i];
-            var secondItem = second[i];
-
-            try
+            if (!HasSameMetadata(first[i], second[i]))
             {
-                if (!StringComparer.OrdinalIgnoreCase.Equals(firstItem.FullPath, secondItem.FullPath) ||
-                    !StringComparer.Ordinal.Equals(firstItem.DisplayName, secondItem.DisplayName) ||
-                    !StringComparer.Ordinal.Equals(firstItem.TargetPath, secondItem.TargetPath) ||
-                    !StringComparer.OrdinalIgnoreCase.Equals(firstItem.IconPath, secondItem.IconPath) ||
-                    firstItem.IsDirectory() != secondItem.IsDirectory() ||
-                    firstItem.LastUsedTimeUtc != secondItem.LastUsedTimeUtc)
-                {
-                    return false;
-                }
-            }
-            catch
-            {
-                // Unreadable metadata is not evidence that the cached snapshot is still current.
                 return false;
             }
         }
 
         return true;
+    }
+
+    internal static bool HasSameMetadata(IRecentFile first, IRecentFile second)
+    {
+        try
+        {
+            return StringComparer.OrdinalIgnoreCase.Equals(first.FullPath, second.FullPath) &&
+                   StringComparer.Ordinal.Equals(first.DisplayName, second.DisplayName) &&
+                   StringComparer.Ordinal.Equals(first.TargetPath, second.TargetPath) &&
+                   StringComparer.OrdinalIgnoreCase.Equals(first.IconPath, second.IconPath) &&
+                   first.IsFileSystemPath == second.IsFileSystemPath &&
+                   first.IsDirectory() == second.IsDirectory() &&
+                   first.LastUsedTimeUtc == second.LastUsedTimeUtc;
+        }
+        catch
+        {
+            // Unreadable metadata is not evidence that the cached snapshot is still current.
+            return false;
+        }
     }
 
     public void Dispose()

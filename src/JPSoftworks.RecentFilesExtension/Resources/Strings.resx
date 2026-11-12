@@ -201,6 +201,12 @@
   <data name="Settings_ShowDetails_Subtitle" xml:space="preserve">
     <value>Show the selected item's full name, path, file type, and last-used time.</value>
   </data>
+  <data name="Settings_UseShellIcons_Title" xml:space="preserve">
+    <value>Load file icons in Command Palette (preview)</value>
+  </data>
+  <data name="Settings_UseShellIcons_Subtitle" xml:space="preserve">
+    <value>Let this host load local file icons and thumbnails. Enable this only if your build supports shell icons.</value>
+  </data>
   <data name="FileType_File" xml:space="preserve">
     <value>File</value>
   </data>

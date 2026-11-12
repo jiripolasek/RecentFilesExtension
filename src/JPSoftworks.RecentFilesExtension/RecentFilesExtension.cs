@@ -5,6 +5,7 @@
 // ------------------------------------------------------------
 
 using System.Runtime.InteropServices;
+using JPSoftworks.RecentFilesExtension.Helpers;
 
 namespace JPSoftworks.RecentFilesExtension;
 
@@ -13,7 +14,8 @@ public sealed partial class RecentFilesExtension : IExtension, IDisposable
 {
     private readonly ManualResetEvent _extensionDisposedEvent;
 
-    private readonly RecentFilesExtensionCommandsProvider _provider = new();
+    private readonly Dictionary<ShellIconSupport, RecentFilesExtensionCommandsProvider> _providers = [];
+    private SettingsManager? _settings;
     private bool _isDisposed;
 
     public RecentFilesExtension(ManualResetEvent extensionDisposedEvent)
@@ -23,22 +25,48 @@ public sealed partial class RecentFilesExtension : IExtension, IDisposable
 
     public object? GetProvider(ProviderType providerType)
     {
-        return providerType switch
+        if (providerType != ProviderType.Commands)
         {
-            ProviderType.Commands => this._provider,
-            _ => null
-        };
+            return null;
+        }
+
+        var support = CmdPalHost.GetCallingShellIconSupport();
+        // The COM server shares this extension between hosts that can support different icon protocols.
+        lock (this._providers)
+        {
+            if (this._isDisposed)
+            {
+                return null;
+            }
+
+            if (!this._providers.TryGetValue(support, out var provider))
+            {
+                provider = new(this._settings ??= new(), support);
+                this._providers.Add(support, provider);
+            }
+
+            return provider;
+        }
     }
 
     public void Dispose()
     {
-        if (this._isDisposed)
+        lock (this._providers)
         {
-            return;
+            if (this._isDisposed)
+            {
+                return;
+            }
+
+            this._isDisposed = true;
+            foreach (var provider in this._providers.Values)
+            {
+                provider.Dispose();
+            }
+
+            this._providers.Clear();
         }
 
-        this._isDisposed = true;
-        this._provider.Dispose();
         this._extensionDisposedEvent.Set();
     }
 }

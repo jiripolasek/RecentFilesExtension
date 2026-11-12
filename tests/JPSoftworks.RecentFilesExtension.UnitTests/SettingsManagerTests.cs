@@ -14,6 +14,58 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 public sealed class SettingsManagerTests
 {
     [TestMethod]
+    public void HostShellIconSupportUsesThePackageFamilyAndNumericRetailVersion()
+    {
+        const string retail = "Microsoft.CommandPalette";
+        const string dev = "Microsoft.CommandPalette.Dev";
+        const string publisher = "8wekyb3d8bbwe";
+        Assert.AreEqual(ShellIconSupport.Unsupported, CmdPalHost.GetPackageShellIconSupport(retail, publisher, 0, 12));
+        Assert.AreEqual(ShellIconSupport.Supported, CmdPalHost.GetPackageShellIconSupport(retail, publisher, 0, 13));
+        Assert.AreEqual(ShellIconSupport.Supported, CmdPalHost.GetPackageShellIconSupport(retail, publisher, 1, 0));
+        Assert.AreEqual(ShellIconSupport.Supported, CmdPalHost.GetPackageShellIconSupport(dev, publisher, 0, 0));
+        Assert.AreEqual(ShellIconSupport.Unknown, CmdPalHost.GetPackageShellIconSupport(dev, "other", 1, 0));
+        Assert.AreEqual(ShellIconSupport.Unknown, CmdPalHost.GetPackageShellIconSupport(retail, "other", 1, 0));
+        Assert.AreEqual(ShellIconSupport.Unknown, CmdPalHost.GetPackageShellIconSupport("other", publisher, 1, 0));
+    }
+
+    [TestMethod]
+    public void NoRpcCallerLeavesTheHostUnknown()
+    {
+        Assert.AreEqual(ShellIconSupport.Unknown, CmdPalHost.GetCallingShellIconSupport());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void KnownHostsHideThePreviewAndPreserveItsSavedValue(bool preview)
+    {
+        const string key = "jpsoftworks.recentfiles.Appearance.UseShellIcons";
+        var folder = Directory.CreateTempSubdirectory("RecentFilesSettings-");
+        try
+        {
+            var path = Path.Combine(folder.FullName, "settings.json");
+            var contents = $$"""{"{{key}}":"{{(preview ? "true" : "false")}}"}""";
+            File.WriteAllText(path, contents);
+            var settings = new SettingsManager(path);
+            var known = settings.GetHostSettings(ShellIconSupport.Supported);
+            Assert.AreSame(known, settings.GetHostSettings(ShellIconSupport.Unsupported));
+            Assert.AreEqual(contents, File.ReadAllText(path));
+            var form = (SettingsForm)known.ToContent().Single();
+            Assert.DoesNotContain(key, form.TemplateJson);
+            form.SubmitForm("""{"jpsoftworks.recentfiles.Appearance.ViewMode":"gallery"}""", string.Empty);
+            Assert.AreEqual(preview, settings.UseShellIcons);
+            Assert.AreEqual(preview, new SettingsManager(path).UseShellIcons);
+            var unknown = settings.GetHostSettings(ShellIconSupport.Unknown);
+            Assert.AreEqual("gallery", unknown.GetSetting<string>("jpsoftworks.recentfiles.Appearance.ViewMode"));
+            StringAssert.Contains(((SettingsForm)unknown.ToContent().Single()).TemplateJson, key);
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
+    [TestMethod]
     [DataRow("{invalid json")]
     [DataRow("[]")]
     public void MalformedSettingsAreLoggedAndPreservedBeforeRecovery(string contents)
@@ -84,6 +136,7 @@ public sealed class SettingsManagerTests
             Assert.IsFalse(settings.ShowFileTypeInSubtitle);
             Assert.IsFalse(settings.ShowFileTypeTags);
             Assert.IsFalse(settings.ShowDetails);
+            Assert.IsFalse(settings.UseShellIcons);
             Assert.IsFalse(settings.IncludeOfficeRecentFiles);
             var sourceChanges = 0;
             var appearanceChanges = 0;
@@ -97,7 +150,8 @@ public sealed class SettingsManagerTests
                     "jpsoftworks.recentfiles.Appearance.HideFileExtensions": "true",
                     "jpsoftworks.recentfiles.Appearance.ShowFileTypeInSubtitle": "true",
                     "jpsoftworks.recentfiles.Appearance.ShowFileTypeTags": "true",
-                    "jpsoftworks.recentfiles.Appearance.ShowDetails": "true"
+                    "jpsoftworks.recentfiles.Appearance.ShowDetails": "true",
+                    "jpsoftworks.recentfiles.Appearance.UseShellIcons": "true"
                 }
                 """, string.Empty);
 
@@ -109,6 +163,7 @@ public sealed class SettingsManagerTests
             Assert.IsTrue(reloaded.ShowFileTypeInSubtitle);
             Assert.IsTrue(reloaded.ShowFileTypeTags);
             Assert.IsTrue(reloaded.ShowDetails);
+            Assert.IsTrue(reloaded.UseShellIcons);
             Assert.IsFalse(reloaded.IncludeOfficeRecentFiles);
 
             form.SubmitForm("""{"jpsoftworks.recentfiles.Sources.OfficeRecentFiles":"true"}""", string.Empty);

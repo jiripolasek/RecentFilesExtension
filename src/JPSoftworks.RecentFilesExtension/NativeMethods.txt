@@ -7,3 +7,10 @@ ShellExecuteEx
 SHGetNameFromIDList
 SHGetKnownFolderPath
 FOLDERID_Downloads
+RpcServerInqCallAttributesW
+RPC_CALL_ATTRIBUTES_V2_W
+RPC_QUERY_CLIENT_PID
+OpenProcess
+GetPackageId
+PACKAGE_ID
+QueryFullProcessImageNameW
