@@ -443,5 +443,93 @@ namespace JPSoftworks.RecentFilesExtension.Resources {
                 return ResourceManager.GetString("UserExperienceHelper_InfoCaption", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to To report a problem:
+        ///
+        ///1. Reproduce the problem.
+        ///2. Save the diagnostic logs to your Desktop.
+        ///3. Open GitHub Issues and create a report.
+        ///4. Attach the generated ZIP file to the report.
+        ///
+        ///Diagnostic logs can contain file names, paths, URLs, and technical error details. Review the archive before sharing it..
+        /// </summary>
+        internal static string ReportProblem_Instructions {
+            get {
+                return ResourceManager.GetString("ReportProblem_Instructions", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to GitHub Issues couldn&apos;t be opened. Try again or visit github.com/jiripolasek/RecentFilesExtension/issues..
+        /// </summary>
+        internal static string ReportProblem_OpenGitHub_Failed {
+            get {
+                return ResourceManager.GetString("ReportProblem_OpenGitHub_Failed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Create a report and attach the diagnostic logs..
+        /// </summary>
+        internal static string ReportProblem_OpenGitHub_Subtitle {
+            get {
+                return ResourceManager.GetString("ReportProblem_OpenGitHub_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Open GitHub Issues.
+        /// </summary>
+        internal static string ReportProblem_OpenGitHub_Title {
+            get {
+                return ResourceManager.GetString("ReportProblem_OpenGitHub_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to The diagnostic logs couldn&apos;t be saved. Check Command Palette diagnostics for details..
+        /// </summary>
+        internal static string ReportProblem_SaveLogs_Failed {
+            get {
+                return ResourceManager.GetString("ReportProblem_SaveLogs_Failed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Create a ZIP file to attach to a GitHub issue..
+        /// </summary>
+        internal static string ReportProblem_SaveLogs_Subtitle {
+            get {
+                return ResourceManager.GetString("ReportProblem_SaveLogs_Subtitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Diagnostic logs were saved to your Desktop as {0}..
+        /// </summary>
+        internal static string ReportProblem_SaveLogs_Succeeded {
+            get {
+                return ResourceManager.GetString("ReportProblem_SaveLogs_Succeeded", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Save diagnostic logs to Desktop.
+        /// </summary>
+        internal static string ReportProblem_SaveLogs_Title {
+            get {
+                return ResourceManager.GetString("ReportProblem_SaveLogs_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Report a bug.
+        /// </summary>
+        internal static string ReportProblem_Title {
+            get {
+                return ResourceManager.GetString("ReportProblem_Title", resourceCulture);
+            }
+        }
     }
 }

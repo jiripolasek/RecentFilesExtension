@@ -142,11 +142,12 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
     private async Task InitialCacheLoadAsync()
     {
         var stopwatch = Stopwatch.StartNew();
+        var loaded = false;
         Logger.LogDebug("Initial cache load started");
 
         try
         {
-            await Task.Run(this.RefreshCache, this._cancellationToken);
+            loaded = await Task.Run(this.RefreshCache, this._cancellationToken);
             this._cancellationToken.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
@@ -166,7 +167,14 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
             itemCount = this._cachedRecentFiles.Count;
         }
 
-        Logger.LogDebug($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
+        if (loaded)
+        {
+            Logger.LogInformation($"Initial cache load completed | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
+        }
+        else
+        {
+            Logger.LogWarning($"Initial cache load finished without a successful refresh | Items: {itemCount}, took {stopwatch.ElapsedMilliseconds}ms");
+        }
         foreach (EventHandler handler in this.InitialLoadComplete?.GetInvocationList() ?? [])
         {
             try
@@ -193,11 +201,11 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
         }
     }
 
-    private void RefreshCache()
+    private bool RefreshCache()
     {
         if (!this.TryBeginRefresh())
         {
-            return;
+            return false;
         }
 
         try
@@ -206,7 +214,7 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
 
             if (this._cancellationToken.IsCancellationRequested)
             {
-                return;
+                return false;
             }
 
             bool changed;
@@ -229,6 +237,8 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
                 this._first = false;
                 this.RecentFilesChanged?.Invoke(null, [.. newList]);
             }
+
+            return true;
         }
         catch (OperationCanceledException) when (this._cancellationToken.IsCancellationRequested)
         {
@@ -243,6 +253,8 @@ internal sealed partial class RecentFilesProvider : IDisposable, IRecentFilesPro
         {
             this.EndRefresh();
         }
+
+        return false;
     }
 
     private bool TryBeginRefresh()

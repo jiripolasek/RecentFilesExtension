@@ -35,6 +35,8 @@ public sealed partial class RecentFilesExtensionCommandsProvider : CommandProvid
                 MoreCommands =
                 [
                     new CommandContextItem(this.Settings.SettingsPage!),
+                    new CommandContextItem(new ReportProblemPage(new DiagnosticLogArchiveService(
+                        Program.LogDirectoryPath, Program.FallbackLogDirectoryPath))),
                 ],
             },
         ];

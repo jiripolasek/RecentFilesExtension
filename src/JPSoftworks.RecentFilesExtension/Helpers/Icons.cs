@@ -24,6 +24,12 @@ internal static class Icons
 
     internal static IconInfo ToggleDetails { get; } = new("\uE946"); // Info
 
+    internal static IconInfo ReportProblem { get; } = new("\uEBE8"); // Bug
+
+    internal static IconInfo Save { get; } = new("\uE74E"); // Save
+
+    internal static IconInfo OpenInNewWindow { get; } = new("\uE8A7"); // OpenInNewWindow
+
     internal static IconInfo MainIcon { get; } = IconHelpers.FromRelativePath("Assets\\Square20x20Logo.scale-100.png");
 
     internal static IconInfo BigIcon { get; } = IconHelpers.FromRelativePath("Assets\\Square44x44Logo.scale-200.png");

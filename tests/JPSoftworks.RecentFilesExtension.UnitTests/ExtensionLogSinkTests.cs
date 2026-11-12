@@ -4,6 +4,9 @@
 //
 // ------------------------------------------------------------
 
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using JPSoftworks.CommandPalette.Extensions.Toolkit.Logging;
 using JPSoftworks.CommandPalette.Extensions.Toolkit.Logging.Abstractions;
 using JPSoftworks.RecentFilesExtension.Helpers;
@@ -14,6 +17,41 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 [TestClass]
 public sealed class ExtensionLogSinkTests
 {
+    [TestMethod]
+    public void StartupPreambleReachesTheFileWithoutAConnectedHost()
+    {
+        var directory = Directory.CreateTempSubdirectory("RecentFilesStartupInfo-");
+        try
+        {
+            var diagnostics = new RecordingSink();
+            using (var sink = new ExtensionLogSink(Path.Combine(directory.FullName, "log.txt"),
+                       Path.Combine(directory.FullName, "fallback.txt"), diagnostics))
+            {
+                Program.LogStartup(sink);
+            }
+
+            var entry = diagnostics.Entries.Single();
+            Assert.AreEqual(ExtensionHostLogLevel.Information, entry.Level);
+            var log = File.ReadAllText(Directory.GetFiles(directory.FullName, "log*.txt").Single());
+            StringAssert.Contains(log, "Starting RecentFilesExtension");
+            StringAssert.Contains(log, $"Version: {typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion}");
+            StringAssert.Contains(log, $"OS: {RuntimeInformation.OSDescription}");
+            StringAssert.Contains(log, $"OS architecture: {RuntimeInformation.OSArchitecture}");
+            StringAssert.Contains(log, $"Process architecture: {RuntimeInformation.ProcessArchitecture}");
+            StringAssert.Contains(log, $"Runtime: {RuntimeInformation.FrameworkDescription}");
+            StringAssert.Contains(log, $"Culture: {CultureInfo.CurrentCulture.Name}");
+            StringAssert.Contains(log, $"UI culture: {CultureInfo.CurrentUICulture.Name}");
+            StringAssert.Contains(log, $"Time zone: {TimeZoneInfo.Local.Id}");
+            StringAssert.Contains(log, $"Process ID: {Environment.ProcessId}");
+            Assert.IsFalse(log.Contains(directory.FullName, StringComparison.Ordinal));
+            Assert.IsFalse(entry.Message.Contains('\n'));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     [TestMethod]
     public async Task SlowDiagnosticsDoNotBlockOtherFileWritesOrDisposalAsync()
     {

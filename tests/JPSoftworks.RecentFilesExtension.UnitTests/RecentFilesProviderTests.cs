@@ -15,6 +15,36 @@ namespace JPSoftworks.RecentFilesExtension.UnitTests;
 public sealed class RecentFilesProviderTests
 {
     [TestMethod]
+    [DataRow(0)]
+    [DataRow(2)]
+    public async Task InitialLoadLogsItemCountWithoutDebugLoggingAsync(int itemCount)
+    {
+        using var logs = new TestLogCapture();
+        using var source = new StubSource(Enumerable.Range(0, itemCount).Select(index => File($"private-file-{index}.txt")).ToArray());
+        using var provider = new RecentFilesProvider(source);
+        Assert.IsTrue(await provider.WaitForInitialLoadAsync(TimeSpan.FromSeconds(5)));
+
+        logs.AssertLogged($"Initial cache load completed | Items: {itemCount}, took ");
+        var entry = logs.Messages.Single(entry => entry.Message.StartsWith("Initial cache load completed", StringComparison.Ordinal));
+        Assert.AreEqual(Microsoft.CommandPalette.Extensions.MessageState.Info, entry.State);
+        Assert.IsFalse(entry.Message.Contains("private-file-", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task FailedInitialLoadDoesNotLogSuccessfulCompletionAsync()
+    {
+        using var logs = new TestLogCapture();
+        using var source = new StubSource { BeforeRead = () => throw new IOException("private-source-path") };
+        using var provider = new RecentFilesProvider(source);
+        Assert.IsTrue(await provider.WaitForInitialLoadAsync(TimeSpan.FromSeconds(5)));
+
+        logs.AssertLogged("Initial cache load finished without a successful refresh | Items: 0");
+        logs.AssertLogged("Failed to refresh recent files");
+        Assert.IsFalse(logs.Messages.Any(entry => entry.Message.StartsWith("Initial cache load completed", StringComparison.Ordinal)));
+        Assert.IsFalse(logs.Messages.Any(entry => entry.Message.Contains("private-source-path", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public async Task InvalidWildcardUsesLiteralSearchAndRecoversOnTheNextQueryAsync()
     {
         using var logs = new TestLogCapture(includeDebug: true);

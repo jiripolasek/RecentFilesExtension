@@ -93,7 +93,7 @@
     <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
-  <Target Name="UpdateVersionFromPackageManifest" BeforeTargets="BeforeBuild">
+  <Target Name="UpdateVersionFromPackageManifest" BeforeTargets="GetAssemblyVersion;BeforeBuild">
     <XmlPeek XmlInputPath="$(PackageManifestPath)" Query="/appx:Package/appx:Identity/@Version" Namespaces="&lt;Namespace Prefix='appx' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10'/&gt;">
       <Output TaskParameter="Result" PropertyName="appxManifestVersion" />
     </XmlPeek>
