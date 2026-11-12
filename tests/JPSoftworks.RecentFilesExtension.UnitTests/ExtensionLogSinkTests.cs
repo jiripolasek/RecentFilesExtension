@@ -31,7 +31,7 @@ public sealed class ExtensionLogSinkTests
             }
 
             var entry = diagnostics.Entries.Single();
-            Assert.AreEqual(ExtensionHostLogLevel.Information, entry.Level);
+            Assert.AreEqual(ExtensionLogLevel.Information, entry.Level);
             var log = File.ReadAllText(Directory.GetFiles(directory.FullName, "log*.txt").Single());
             StringAssert.Contains(log, "Starting RecentFilesExtension");
             StringAssert.Contains(log, $"Version: {typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion}");
@@ -79,10 +79,10 @@ public sealed class ExtensionLogSinkTests
         }
     }
 
-    private sealed class BlockingSink(ManualResetEventSlim gate, TaskCompletionSource entered) : IExtensionHostLogSink
+    private sealed class BlockingSink(ManualResetEventSlim gate, TaskCompletionSource entered) : IExtensionLogSink
     {
         private int _calls;
-        public void Write(ExtensionHostLogEntry entry)
+        public void Write(ExtensionLogEntry entry)
         {
             if (Interlocked.Increment(ref this._calls) == 1)
             {
@@ -96,7 +96,7 @@ public sealed class ExtensionLogSinkTests
     public void InstalledCompositeSinkIsolatesThrowingDiagnostics()
     {
         var recording = new RecordingSink();
-        var composite = new CompositeExtensionHostLogSink(new IExtensionHostLogSink[] { new ThrowingSink(), recording });
+        var composite = new CompositeLogSink(new IExtensionLogSink[] { new ThrowingSink(), recording });
         composite.Write(Entry("original failure"));
         Assert.AreEqual("original failure", recording.Entries.Single().Message);
     }
@@ -224,19 +224,19 @@ public sealed class ExtensionLogSinkTests
         }
     }
 
-    private static ExtensionHostLogEntry Entry(string message) => new(DateTimeOffset.Now, ExtensionHostLogLevel.Error, "Test", 0, message);
+    private static ExtensionLogEntry Entry(string message) => new(DateTimeOffset.Now, ExtensionLogLevel.Error, "Test", 0, message);
 
-    private sealed class RecordingSink : IExtensionHostLogSink
+    private sealed class RecordingSink : IExtensionLogSink
     {
-        public List<ExtensionHostLogEntry> Entries { get; } = [];
-        public void Write(ExtensionHostLogEntry entry) => this.Entries.Add(entry);
+        public List<ExtensionLogEntry> Entries { get; } = [];
+        public void Write(ExtensionLogEntry entry) => this.Entries.Add(entry);
     }
 
-    private sealed class ThrowingSink : IExtensionHostLogSink
+    private sealed class ThrowingSink : IExtensionLogSink
     {
         public int WriteCount { get; private set; }
 
-        public void Write(ExtensionHostLogEntry entry)
+        public void Write(ExtensionLogEntry entry)
         {
             this.WriteCount++;
             throw new InvalidOperationException("test disconnected diagnostics");

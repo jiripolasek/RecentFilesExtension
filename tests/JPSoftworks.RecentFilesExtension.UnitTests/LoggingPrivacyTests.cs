@@ -54,7 +54,7 @@ public sealed class LoggingPrivacyTests
             using var sink = new ExtensionLogSink(
                 Path.Combine(directory.FullName, "log.txt"),
                 Path.Combine(directory.FullName, "fallback.txt"),
-                CommandPaletteExtensionHostLogSink.Instance);
+                CommandPaletteLogSink.Instance);
             using var host = new TestLogCapture(sink: sink);
 
             var item = new RecentPathFile(target, DateTimeOffset.UtcNow);
@@ -96,7 +96,7 @@ public sealed class LoggingPrivacyTests
             {
                 Program.LogFailure(sink, operation, failure);
             }
-            sink.Write(new(DateTimeOffset.Now, ExtensionHostLogLevel.Error, "Host", 0, "Unhandled host failure", failure));
+            sink.Write(new(DateTimeOffset.Now, ExtensionLogLevel.Error, "Host", 0, "Unhandled host failure", failure));
             var settingsPath = Path.Combine(directory.FullName, "settings.json");
             File.WriteAllText(settingsPath, "{}");
             var settings = new SettingsManager(settingsPath);
@@ -156,9 +156,9 @@ public sealed class LoggingPrivacyTests
         public Task<bool> WaitForInitialLoadAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
-    private sealed class RecordingSink : IExtensionHostLogSink
+    private sealed class RecordingSink : IExtensionLogSink
     {
         public List<string> Messages { get; } = [];
-        public void Write(ExtensionHostLogEntry entry) => this.Messages.Add(entry.Message);
+        public void Write(ExtensionLogEntry entry) => this.Messages.Add(entry.Message);
     }
 }

@@ -33,10 +33,10 @@ public static class Program
         using var logs = new ExtensionLogSink(
             string.IsNullOrEmpty(logDirectory) ? string.Empty : Path.Combine(logDirectory, "log.txt"),
             Path.Combine(FallbackLogDirectoryPath, "log.txt"),
-            new CompositeExtensionHostLogSink(new IExtensionHostLogSink[]
+            new CompositeLogSink(new IExtensionLogSink[]
             {
-                CommandPaletteExtensionHostLogSink.Instance,
-                TraceExtensionHostLogSink.Instance
+                CommandPaletteLogSink.Instance,
+                TraceLogSink.Instance
             }));
 
         void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -60,13 +60,11 @@ public static class Program
                 PublisherMoniker = "JPSoftworks",
                 ProductMoniker = "RecentFilesExtension",
                 EnableEfficiencyMode = true,
-                ExtensionFactories = [
-                    new DelegateExtensionFactory(extensionDisposedEvent => new RecentFilesExtension(extensionDisposedEvent))
-                ],
 #if DEBUG
                 IsDebug = true,
 #endif
             })
+                .AddHostedExtensionFactory(context => new RecentFilesExtension(context.ExtensionDisposedEvent))
                 .ClearDefaultLogSinks()
                 .AddLogSink(logs)
                 .RunAsync();
@@ -83,13 +81,13 @@ public static class Program
         }
     }
 
-    internal static void LogStartup(IExtensionHostLogSink logs)
+    internal static void LogStartup(IExtensionLogSink logs)
     {
         var assembly = typeof(Program).Assembly;
         var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? assembly.GetName().Version?.ToString();
         var configuration = assembly.GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration;
-        logs.Write(new(DateTimeOffset.Now, ExtensionHostLogLevel.Information, nameof(Program), 0,
+        logs.Write(new(DateTimeOffset.Now, ExtensionLogLevel.Information, nameof(Program), 0,
             $"Starting RecentFilesExtension | Version: {version}, Build: {configuration}, " +
             $"OS: {RuntimeInformation.OSDescription}, OS architecture: {RuntimeInformation.OSArchitecture}, " +
             $"Process architecture: {RuntimeInformation.ProcessArchitecture}, Runtime: {RuntimeInformation.FrameworkDescription}, " +
@@ -97,7 +95,7 @@ public static class Program
             $"Time zone: {TimeZoneInfo.Local.Id}, Process ID: {Environment.ProcessId}"));
     }
 
-    internal static void LogFailure(IExtensionHostLogSink logs, string operation, Exception? exception)
+    internal static void LogFailure(IExtensionLogSink logs, string operation, Exception? exception)
     {
         logs.LogError(nameof(Program), exception is null ? operation : $"{operation} {ExceptionDiagnostics.Format(exception)}");
     }

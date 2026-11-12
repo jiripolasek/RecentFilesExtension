@@ -11,18 +11,18 @@ namespace JPSoftworks.RecentFilesExtension.Helpers;
 internal sealed partial class ExtensionLogSink(
     string logPath,
     string fallbackPath,
-    IExtensionHostLogSink diagnostics) : IExtensionHostLogSink, IDisposable
+    IExtensionLogSink diagnostics) : IExtensionLogSink, IDisposable
 {
     private readonly Lock _syncRoot = new();
-    private DailyFileExtensionHostLogSink? _file;
-    private DailyFileExtensionHostLogSink? _fallback;
+    private DailyFileLogSink? _file;
+    private DailyFileLogSink? _fallback;
     private bool _fileFailed;
     private bool _fallbackFailed;
     private bool _isDisposed;
 
-    public void Write(ExtensionHostLogEntry entry)
+    public void Write(ExtensionLogEntry entry)
     {
-        List<ExtensionHostLogEntry> failures = [];
+        List<ExtensionLogEntry> failures = [];
         lock (this._syncRoot)
         {
             if (this._isDisposed)
@@ -61,7 +61,7 @@ internal sealed partial class ExtensionLogSink(
         this.WriteDiagnostics(entry);
     }
 
-    private void WriteFallback(ExtensionHostLogEntry entry, List<ExtensionHostLogEntry> failures)
+    private void WriteFallback(ExtensionLogEntry entry, List<ExtensionLogEntry> failures)
     {
         try
         {
@@ -80,7 +80,7 @@ internal sealed partial class ExtensionLogSink(
 
     public void Dispose()
     {
-        List<ExtensionHostLogEntry> failures = [];
+        List<ExtensionLogEntry> failures = [];
         lock (this._syncRoot)
         {
             if (this._isDisposed)
@@ -116,7 +116,7 @@ internal sealed partial class ExtensionLogSink(
         }
     }
 
-    private void WriteDiagnostics(ExtensionHostLogEntry entry)
+    private void WriteDiagnostics(ExtensionLogEntry entry)
     {
         try
         {
@@ -128,8 +128,8 @@ internal sealed partial class ExtensionLogSink(
         }
     }
 
-    private static ExtensionHostLogEntry Failure(string message, Exception exception)
+    private static ExtensionLogEntry Failure(string message, Exception exception)
     {
-        return new(DateTimeOffset.Now, ExtensionHostLogLevel.Error, nameof(ExtensionLogSink), 0, $"{message} {ExceptionDiagnostics.Format(exception)}");
+        return new(DateTimeOffset.Now, ExtensionLogLevel.Error, nameof(ExtensionLogSink), 0, $"{message} {ExceptionDiagnostics.Format(exception)}");
     }
 }

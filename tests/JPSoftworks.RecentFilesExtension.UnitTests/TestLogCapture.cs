@@ -25,7 +25,7 @@ internal sealed class TestLogCapture : IExtensionHost, IDisposable
     private readonly bool _previousDebugEnabled;
     public ConcurrentQueue<ILogMessage> Messages { get; } = new();
 
-    public TestLogCapture(bool includeDebug = false, IExtensionHostLogSink? sink = null)
+    public TestLogCapture(bool includeDebug = false, IExtensionLogSink? sink = null)
     {
         var bridge = typeof(ExtensionHostRunner).Assembly.GetType(
             "JPSoftworks.CommandPalette.Extensions.Toolkit.Logging.LegacyLoggerBridge", throwOnError: true)!;
@@ -37,7 +37,7 @@ internal sealed class TestLogCapture : IExtensionHost, IDisposable
             this._previousDebugEnabled = (bool)this._debugEnabled.GetValue(null)!;
             this._previousSink = this._sink.GetValue(null);
             this._debugEnabled.SetValue(null, includeDebug);
-            this._sink.SetValue(null, sink ?? CommandPaletteExtensionHostLogSink.Instance);
+            this._sink.SetValue(null, sink ?? CommandPaletteLogSink.Instance);
         }
         ExtensionHost.Initialize(this);
 
