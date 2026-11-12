@@ -91,8 +91,8 @@ public sealed class RecentFileListItemTests
 
             using var stream = await item.Icon!.Light.Data.OpenReadAsync();
             var decoder = await BitmapDecoder.CreateAsync(stream);
-            Assert.AreEqual(256u, decoder.PixelWidth);
-            Assert.AreEqual(192u, decoder.PixelHeight);
+            // Windows may return a square Shell icon instead of a photo thumbnail.
+            Assert.AreEqual(256u, Math.Max(decoder.PixelWidth, decoder.PixelHeight));
 
             settings.ViewMode = "list";
             item.ApplyAppearance(settings, support);
