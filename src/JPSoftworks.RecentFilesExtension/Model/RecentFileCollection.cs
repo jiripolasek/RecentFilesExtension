@@ -46,7 +46,7 @@ internal sealed partial class RecentFileCollection : IList<IRecentFile>
     /// </summary>
     public bool ContainsTarget(string targetPath)
     {
-        var key = this.GetTargetKey(targetPath);
+        var key = GetTargetKey(targetPath);
         return this._targetPaths.Contains(key);
     }
 
@@ -66,7 +66,7 @@ internal sealed partial class RecentFileCollection : IList<IRecentFile>
     /// <returns>True if the item was added, false if target already exists.</returns>
     public bool TryAdd(IRecentFile item)
     {
-        var targetKey = this.GetTargetKey(item.TargetPath);
+        var targetKey = GetTargetKey(item.TargetPath);
         if (this._targetPaths.Contains(targetKey))
             return false;
 
@@ -136,18 +136,18 @@ internal sealed partial class RecentFileCollection : IList<IRecentFile>
     private void AddToLookups(IRecentFile item)
     {
         this._itemsByPath[item.FullPath] = item;
-        var targetKey = this.GetTargetKey(item.TargetPath);
+        var targetKey = GetTargetKey(item.TargetPath);
         this._targetPaths.Add(targetKey);
     }
 
     private void RemoveFromLookups(IRecentFile item)
     {
         this._itemsByPath.Remove(item.FullPath);
-        var targetKey = this.GetTargetKey(item.TargetPath);
+        var targetKey = GetTargetKey(item.TargetPath);
         this._targetPaths.Remove(targetKey);
     }
 
-    private string GetTargetKey(string targetPath)
+    private static string GetTargetKey(string targetPath)
     {
         return targetPath.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase) ||
                targetPath.StartsWith(@"\\?\UNC", StringComparison.OrdinalIgnoreCase)

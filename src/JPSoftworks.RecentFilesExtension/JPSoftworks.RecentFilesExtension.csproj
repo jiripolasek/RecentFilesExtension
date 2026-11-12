@@ -68,13 +68,7 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <SelfContained>true</SelfContained>
 
-    <!--
-      Serilog 4.3.0 raises IL2067 in its generic object-destructuring path. The toolkit
-      logger used here accepts only preformatted strings and exceptions, so that path
-      is not used. Keep detailed warnings enabled so every other trim warning remains visible.
-    -->
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
-    <NoWarn>$(NoWarn);IL2067</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>

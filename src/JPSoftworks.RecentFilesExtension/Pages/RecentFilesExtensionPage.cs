@@ -19,7 +19,7 @@ internal sealed partial class RecentFilesExtensionPage : DynamicListPage, IDispo
     private readonly ShellIconSupport _shellIconSupport;
     private readonly Lazy<IContextItem[]> _appearanceCommands;
     private readonly IRecentFilesProvider _recentFilesProvider;
-    private readonly IRecentFilesLoader _loader;
+    private readonly RecentFilesLoader _loader;
     private readonly RecentFilesFilters _filters;
     private readonly Lock _syncRoot = new();
     private Dictionary<string, RecentFileListItem> _itemsByPath = new(StringComparer.Ordinal);
