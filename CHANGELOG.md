@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0] - 2026-11-13
+
+### Added
+
+- Add a Report a bug page with a GitHub issue link, diagnostic ZIP export to the Desktop, and an action to show the exported ZIP in File Explorer.
+
+### Changed
+
+- Reduce memory use when browsing and searching by reusing unchanged result items and loading icons, context commands, and details only when needed.
+- Use Shell icons for list views on supported Command Palette hosts, with a preview setting when host support is unknown.
+- Limit grid and gallery image thumbnails to 256 pixels to reduce Command Palette memory use.
+- Include startup environment information and initial-load results in diagnostic logs.
+
+### Fixed
+
+- Generate the assembly version from the package manifest so diagnostics report the installed extension version correctly.
+
+### Development
+
+- Target .NET 11 and update System.Drawing.Common to 11.0.0.
+- Upgrade JPSoftworks.CommandPalette.Extensions.Toolkit to 0.12.0-preview.2 and adopt its renamed logging types and hosted extension registration.
+- Update the Command Palette SDK to 0.12.260812002.
+- Resolve analyzer warnings and remove the obsolete Serilog trimming-warning suppression.
+
 ## [0.10.0] - 2026-11-11
 
 ### Added
